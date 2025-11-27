@@ -5,9 +5,26 @@ import { checkClaudeInstalled } from '../steps/check-claude.js';
 import { installClaude } from '../steps/install-claude.js';
 import { configureMcp } from '../steps/configure-mcp.js';
 import { runIntegration } from '../steps/run-integration.js';
+import { isGitClean } from '../steps/check-git.js';
 
-export async function setup() {
+export interface SetupOptions {
+  allowDirty?: boolean;
+}
+
+export async function setup(options: SetupOptions = {}) {
   console.log(chalk.bold('\n🚀 PortOne 연동 설정을 시작합니다\n'));
+
+  // Step 0: Git 상태 확인
+  if (!options.allowDirty) {
+    const gitSpinner = ora('Git 상태 확인 중...').start();
+    const clean = await isGitClean();
+    if (!clean) {
+      gitSpinner.fail('Git에 커밋되지 않은 변경사항이 있습니다');
+      console.log(chalk.yellow('\n변경사항을 커밋하거나 --allow-dirty 플래그를 사용하세요'));
+      process.exit(1);
+    }
+    gitSpinner.succeed('Git 상태 확인됨');
+  }
 
   // Step 1: Claude Code 설치 확인
   let spinner = ora('Claude Code 설치 확인 중...').start();
