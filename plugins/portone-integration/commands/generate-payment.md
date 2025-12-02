@@ -1,7 +1,7 @@
 ---
 description: 포트원 결제 연동 코드를 대화형으로 생성합니다
 argument-hint: [옵션: v1|v2] [결제유형: checkout|billing|keyin|identity]
-allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, mcp__portone__readPortoneV2FrontendCode, mcp__portone__readPortoneV2BackendCode, mcp__portone__readPortoneOpenapiSchema, mcp__portone__readPortoneOpenapiSchemaSummary, mcp__portone__listPortoneDocs, mcp__portone__readPortoneDoc, mcp__portone__regex_search_portone_docs
+allowed-tools: Read, Write, Glob, Grep, AskUserQuestion, mcp__portone__readPortoneV2FrontendCode, mcp__portone__readPortoneV2BackendCode, mcp__portone__readPortoneOpenapiSchema, mcp__portone__readPortoneOpenapiSchemaSummary, mcp__portone__listPortoneDocs, mcp__portone__readPortoneDoc, mcp__portone__regex_search_portone_docs, mcp__portone__listStores, mcp__portone__getChannelsOfStore, mcp__portone__listSharedTestChannels
 ---
 
 # 포트원 결제 연동 코드 생성
@@ -75,16 +75,49 @@ AskUserQuestion으로 확인:
 - HTML (Vanilla JS)
 - Vue (HTML 기반으로 적용)
 
-**백엔드:**
-- Express (Node.js)
-- FastAPI (Python)
-- Flask (Python)
-- Spring/Kotlin
+**백엔드 (서버 SDK 우선 사용):**
+- Node.js (Express, Nest 등) → `@portone/server-sdk`
+- Python (FastAPI, Flask, Django 등) → `portone-server-sdk`
+- JVM (Spring, Kotlin 등) → `io.portone:server-sdk`
 
-### Step 6: PG사 선택 (선택사항)
+서버 SDK가 지원되지 않는 언어의 경우에만 REST API 직접 호출 코드를 생성한다.
 
-테스트 환경이거나 특정 PG사가 없으면 기본값 사용.
-주요 PG사: toss, nice, inicis, kcp, kakaopay, naverpay
+### Step 6: PG사 선택
+
+MCP 서버를 통해 사용 가능한 PG사 목록을 조회하여 선택지를 제공한다.
+
+**채널 조회 순서:**
+
+1. **사용자 상점의 채널 조회 시도** (로그인 필요)
+   ```
+   mcp__portone__listStores
+   → 상점 ID 획득
+
+   mcp__portone__getChannelsOfStore
+   - store: 획득한 상점 ID
+   - fields: ["id", "pg", "name", "canV2"]
+   ```
+
+2. **공용 테스트 채널 조회** (상점 채널이 없거나 실패 시)
+   ```
+   mcp__portone__listSharedTestChannels
+   - pgProviders: (선택) 특정 PG사만 필터링
+   ```
+
+3. **기본 PG사 목록 사용** (MCP 조회 실패 시 fallback)
+   - toss (토스페이먼츠)
+   - nice (나이스페이먼츠)
+   - inicis (KG이니시스)
+   - kcp (NHN KCP)
+   - kakao (카카오페이)
+   - naver (네이버페이)
+   - tosspay (토스페이)
+   - ksnet (KSNET)
+   - smartro (스마트로)
+
+**AskUserQuestion으로 PG사 선택:**
+조회된 PG사 목록을 선택지로 구성하여 사용자에게 제시한다.
+mcp__portone__getChannelsOfStore 로 V2 지원 여부(canV2)를 알 수 있으면 함께 표시하여 호환성 확인 가능하게 한다.
 
 ### Step 7: 예시 코드 조회
 
@@ -119,10 +152,14 @@ mcp__portone__readPortoneV2BackendCode
    - 결제 요청 함수 작성
    - 결제 결과 처리 로직
 
-2. **백엔드 코드**
-   - SDK 설치 안내 (해당하는 경우)
-   - 결제 검증 API 엔드포인트
-   - 웹훅 처리 (선택)
+2. **백엔드 코드 (서버 SDK 우선)**
+   - 서버 SDK 설치 안내
+     - Node.js: `npm install @portone/server-sdk`
+     - Python: `pip install portone-server-sdk`
+     - JVM: `implementation("io.portone:server-sdk:0.+")`
+   - SDK 클라이언트 초기화 코드
+   - 결제 검증 API 엔드포인트 (SDK 메서드 활용)
+   - 웹훅 처리 (SDK의 웹훅 검증 기능 활용)
 
 3. **환경 변수 설정**
    - `.env.example` 파일 생성
