@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "portone": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@portone/mcp-server@latest"
+      ],
+      "env": {}
+    }
+  }
+}

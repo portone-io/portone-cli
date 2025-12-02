@@ -1,11 +1,11 @@
-import { promisify } from 'node:util';
-import childProcess from 'node:child_process';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-const exec = promisify(childProcess.exec);
+const execAsync = promisify(exec);
 
 export async function checkClaudeInstalled(): Promise<boolean> {
   try {
-    const { stdout } = await exec('claude --version');
+    const { stdout } = await execAsync('claude --version');
     console.log(stdout);
     return stdout.includes('Claude Code');
   } catch (error) {

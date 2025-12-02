@@ -1,4 +1,4 @@
-import inquirer from 'inquirer';
+import { select, confirm } from '@inquirer/prompts';
 import ora from 'ora';
 import chalk from 'chalk';
 import { checkClaudeInstalled } from '../steps/check-claude.js';
@@ -33,12 +33,10 @@ export async function setup(options: SetupOptions = {}) {
   if (!isClaudeInstalled) {
     spinner.warn('Claude Code가 설치되어 있지 않습니다');
 
-    const { shouldInstall } = await inquirer.prompt([{
-      type: 'confirm',
-      name: 'shouldInstall',
+    const shouldInstall = await confirm({
       message: 'Claude Code를 설치하시겠습니까?',
       default: true
-    }]);
+    });
 
     if (shouldInstall) {
       spinner = ora('Claude Code 설치 중...').start();
@@ -70,25 +68,21 @@ export async function setup(options: SetupOptions = {}) {
   }
 
   // Step 3: 연동 유형 선택
-  const { integrationType } = await inquirer.prompt([{
-    type: 'list',
-    name: 'integrationType',
+  const integrationType = await select<'payment' | 'identity'>({
     message: '연동 유형을 선택하세요:',
     choices: [
       { name: '💳 결제 연동', value: 'payment' },
       { name: '🔐 본인인증 연동', value: 'identity' }
     ]
-  }]);
+  });
 
-  const { version } = await inquirer.prompt([{
-    type: 'list',
-    name: 'version',
+  const version = await select<'v1' | 'v2'>({
     message: '포트원 버전을 선택하세요:',
     choices: [
       { name: 'V2 (권장)', value: 'v2' },
       { name: 'V1 (레거시)', value: 'v1' }
     ]
-  }]);
+  });
 
   // Step 4: Claude Code로 연동 실행
   console.log(chalk.cyan('\n✨ Claude Code로 연동을 시작합니다...\n'));
