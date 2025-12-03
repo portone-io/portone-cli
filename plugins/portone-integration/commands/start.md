@@ -182,8 +182,8 @@ mcp__portone__readPortoneV2BackendCode
 ## 사용 예시
 
 ```
-/generate-payment
-/generate-payment v2
-/generate-payment v2 checkout
-/generate-payment v1 billing
+/portone-integration:start
+/portone-integration:start v2
+/portone-integration:start v2 checkout
+/portone-integration:start v1 billing
 ```

@@ -180,7 +180,7 @@ V1 코드가 발견된 경우:
 ## 사용 예시
 
 ```
-/review-integration
-/review-integration src/payment/
-/review-integration src/api/payment.ts
+/portone-integration:review
+/portone-integration:review src/payment/
+/portone-integration:review src/api/payment.ts
 ```

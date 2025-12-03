@@ -38,15 +38,15 @@
 
 ### 슬래시 커맨드
 
-#### `/generate-payment`
+#### `/start`
 
 결제 연동 코드를 대화형으로 생성합니다.
 
 ```
-/generate-payment                    # 대화형으로 모든 옵션 선택
-/generate-payment v2                 # V2 버전으로 생성
-/generate-payment v2 checkout        # V2 일반결제 코드 생성
-/generate-payment v1 billing         # V1 정기결제 코드 생성
+/portone-integration:start                    # 대화형으로 모든 옵션 선택
+/portone-integration:start v2                 # V2 버전으로 생성
+/portone-integration:start v2 checkout        # V2 일반결제 코드 생성
+/portone-integration:start v1 billing         # V1 정기결제 코드 생성
 ```
 
 **결제 유형:**
@@ -55,14 +55,14 @@
 - `keyin`: 수기결제 (카드 직접 입력)
 - `identity`: 본인인증
 
-#### `/review-integration`
+#### `/review`
 
 기존 포트원 연동 코드를 검토합니다.
 
 ```
-/review-integration                  # 프로젝트 전체 검토
-/review-integration src/payment/     # 특정 디렉토리 검토
-/review-integration src/api/pay.ts   # 특정 파일 검토
+/portone-integration:review                  # 프로젝트 전체 검토
+/portone-integration:review src/payment/     # 특정 디렉토리 검토
+/portone-integration:review src/api/pay.ts   # 특정 파일 검토
 ```
 
 ### 에이전트
