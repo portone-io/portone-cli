@@ -85,7 +85,7 @@ mcp__portone__readPortoneDoc
 - 개별 문서 내용 조회
 - path, fields 지정
 
-mcp__portone__regex_search_portone_docs
+mcp__portone__regexSearchPortoneDocs
 - 정규식 기반 문서 검색
 - 키워드로 관련 문서 찾기
 ```

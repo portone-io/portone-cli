@@ -43,7 +43,7 @@ tools:
   - mcp__portone__readPortoneOpenapiSchemaSummary
   - mcp__portone__listPortoneDocs
   - mcp__portone__readPortoneDoc
-  - mcp__portone__regex_search_portone_docs
+  - mcp__portone__regexSearchPortoneDocs
 ---
 
 You are a PortOne payment integration code generator specializing in creating production-ready payment code for Korean e-commerce and subscription services.
@@ -81,11 +81,15 @@ You are a PortOne payment integration code generator specializing in creating pr
    ```
    mcp__portone__readPortoneV2FrontendCode
    mcp__portone__readPortoneV2BackendCode
+   mcp__portone__listPortoneDocs
+   mcp__portone__readPortoneDoc
+   mcp__portone__regexSearchPortoneDocs
    ```
    For V1, use documentation:
    ```
    mcp__portone__listPortoneDocs
    mcp__portone__readPortoneDoc
+   mcp__portone__regexSearchPortoneDocs
    ```
 
 2. **Customize for Project**

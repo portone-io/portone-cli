@@ -46,7 +46,7 @@ tools:
   - Grep
   - mcp__portone__listPortoneDocs
   - mcp__portone__readPortoneDoc
-  - mcp__portone__regex_search_portone_docs
+  - mcp__portone__regexSearchPortoneDocs
   - mcp__portone__readPortoneOpenapiSchema
   - mcp__portone__readPortoneOpenapiSchemaSummary
   - mcp__portone__readPortoneV2FrontendCode
@@ -103,12 +103,16 @@ Identify:
 mcp__portone__readPortoneV2FrontendCode - Get official frontend example
 mcp__portone__readPortoneV2BackendCode - Get official backend example
 mcp__portone__readPortoneOpenapiSchema - Get API parameter specifications
+mcp__portone__listPortoneDocs - List available documentation
+mcp__portone__readPortoneDoc - Read specific guides
+mcp__portone__regexSearchPortoneDocs - Search
 ```
 
 **For V1 Code:**
 ```
 mcp__portone__listPortoneDocs - List available documentation
 mcp__portone__readPortoneDoc - Read specific guides
+mcp__portone__regexSearchPortoneDocs - Search
 ```
 
 ### 4. Validation Checklist
