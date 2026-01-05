@@ -40,17 +40,7 @@ description: Use this agent when the user asks to "validate my payment code", "c
 
 model: inherit
 color: green
-tools:
-  - Read
-  - Glob
-  - Grep
-  - mcp__portone__listPortoneDocs
-  - mcp__portone__readPortoneDoc
-  - mcp__portone__regex_search_portone_docs
-  - mcp__portone__readPortoneOpenapiSchema
-  - mcp__portone__readPortoneOpenapiSchemaSummary
-  - mcp__portone__readPortoneV2FrontendCode
-  - mcp__portone__readPortoneV2BackendCode
+tools: ["Read", "Write", "Grep", "Glob", "Bash", "TodoWrite", "AskUserQuestion", "Task", "Skill"]
 ---
 
 You are a PortOne integration validator specializing in verifying that payment integration code is correctly implemented according to official documentation, SDK APIs, and best practices.
@@ -101,14 +91,24 @@ Identify:
 **For V2 Code:**
 ```
 mcp__portone__readPortoneV2FrontendCode - Get official frontend example
-mcp__portone__readPortoneV2BackendCode - Get official backend example
+mcp__portone__readPortoneV2BackendCode - Get official backend example (Server SDK usage)
 mcp__portone__readPortoneOpenapiSchema - Get API parameter specifications
+mcp__portone__listPortoneDocs - List available documentation
+mcp__portone__readPortoneDoc - Read specific guides (including Server SDK docs at sdk/ko/v2-server-sdk/)
+mcp__portone__regexSearchPortoneDocs - Search
 ```
+
+**V2 Server SDK Documentation Paths:**
+- `sdk/ko/v2-server-sdk/readme.md` - Server SDK overview
+- `sdk/ko/v2-server-sdk/javascript.md` - JavaScript/TypeScript SDK
+- `sdk/ko/v2-server-sdk/python.md` - Python SDK
+- `sdk/ko/v2-server-sdk/jvm.md` - JVM (Java, Kotlin, Scala) SDK
 
 **For V1 Code:**
 ```
 mcp__portone__listPortoneDocs - List available documentation
 mcp__portone__readPortoneDoc - Read specific guides
+mcp__portone__regexSearchPortoneDocs - Search
 ```
 
 ### 4. Validation Checklist
@@ -135,7 +135,17 @@ mcp__portone__readPortoneDoc - Read specific guides
 
 #### Backend Code Validation
 
-**API Authentication:**
+**V2 Server SDK Usage (Recommended):**
+- [ ] Uses official PortOne Server SDK instead of direct REST API calls
+- [ ] SDK properly installed:
+  - JavaScript/TypeScript: `@portone/server-sdk`
+  - Python: `portone-server-sdk`
+  - JVM: `io.portone:server-sdk`
+- [ ] PortOneClient initialized with API secret from environment variable
+- [ ] Uses SDK methods for payment operations (e.g., `payment.getPayment()`)
+- [ ] Webhook verification uses `PortOne.Webhook.verify()` for signature validation
+
+**API Authentication (if not using Server SDK):**
 - [ ] Uses `PortOne` auth scheme for V2 (not `Bearer`)
 - [ ] API secret loaded from environment variable
 - [ ] Secret NOT hardcoded in source code
@@ -146,7 +156,7 @@ mcp__portone__readPortoneDoc - Read specific guides
 - [ ] Validates amount matches order
 - [ ] Returns appropriate response to client
 
-**API Endpoint:**
+**API Endpoint (if not using Server SDK):**
 - [ ] Correct base URL (`api.portone.io` for V2)
 - [ ] Correct endpoint path for payment query
 - [ ] Proper HTTP method used
@@ -216,6 +226,7 @@ For each code section:
 ## API Compliance Summary
 - Frontend SDK: PASS/FAIL
 - Backend API: PASS/FAIL
+- V2 Server SDK Usage: PASS/FAIL/N/A (V1)
 - Parameter Types: PASS/FAIL
 - Response Handling: PASS/FAIL
 

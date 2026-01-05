@@ -1,0 +1,5 @@
+---
+"@portone/cli": patch
+---
+
+Release

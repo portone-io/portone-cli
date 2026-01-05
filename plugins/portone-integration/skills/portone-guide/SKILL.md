@@ -6,7 +6,7 @@ version: 1.0.0
 
 # PortOne Integration Guide
 
-포트원(PortOne) 결제 연동에 필요한 핵심 개념과 MCP 도구 활용법을 안내한다.
+포트원(PortOne) 결제 연동에 필요한 핵심 개념과 MCP 도구 활용법을 안내한다. 코드 생성에는 payment-code-generator 에이전트를, 코드 검증에는 integration-validator 에이전트를 사용한다.
 
 ## Overview
 
@@ -85,7 +85,7 @@ mcp__portone__readPortoneDoc
 - 개별 문서 내용 조회
 - path, fields 지정
 
-mcp__portone__regex_search_portone_docs
+mcp__portone__regexSearchPortoneDocs
 - 정규식 기반 문서 검색
 - 키워드로 관련 문서 찾기
 ```
