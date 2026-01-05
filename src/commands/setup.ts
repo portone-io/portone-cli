@@ -2,7 +2,7 @@ import { confirm } from '@inquirer/prompts';
 import ora from 'ora';
 import chalk from 'chalk';
 import { checkClaudeInstalled } from '../steps/check-claude.js';
-import { installClaude } from '../steps/install-claude.js';
+import { installClaude, updateClaude } from '../steps/install-claude.js';
 import { configurePlugin } from '../steps/configure-plugin.js';
 import { showIntegrationGuide } from '../steps/run-integration.js';
 import { isGitClean } from '../steps/check-git.js';
@@ -56,7 +56,16 @@ export async function setup(options: SetupOptions = {}) {
     spinner.succeed('Claude Code 설치 확인됨');
   }
 
-  // Step 2: 플러그인 설정
+  // Step 2: Claude Code 업데이트
+  spinner = ora('Claude Code 업데이트 중...').start();
+  try {
+    await updateClaude();
+    spinner.succeed('Claude Code 업데이트 완료');
+  } catch (error) {
+    spinner.warn('Claude Code 업데이트 실패 (계속 진행합니다)');
+  }
+
+  // Step 3: 플러그인 설정
   spinner = ora('PortOne 플러그인 설정 중...').start();
   try {
     await configurePlugin(process.cwd());
