@@ -1,7 +1,7 @@
 ---
 description: 포트원 결제 연동 코드를 대화형으로 생성합니다
 argument-hint: 결제 연동 요구사항...
-allowed-tools: ["Read", "Write", "Grep", "Glob", "Bash", "TodoWrite", "AskUserQuestion", "Task"]
+allowed-tools: ["Read", "Write", "Grep", "Glob", "Bash", "TodoWrite", "AskUserQuestion", "Task", "Skill"]
 ---
 
 # 포트원 결제 연동 코드 생성 워크플로우
@@ -111,77 +111,25 @@ AskUserQuestion 예시:
 
 ---
 
-## Phase 2: 프로젝트 환경 분석
+### 1.4 연동 요구사항
 
-버전과 결제 유형이 확정되면, 프로젝트 환경을 파악합니다:
+AskUserQuestion을 사용하여 물어봅니다:
 
-1. **프로젝트 파일 확인**
-   - package.json, requirements.txt, build.gradle 등 확인
-   - 프론트엔드 프레임워크 감지 (React, Vue, Next.js, HTML 등)
-   - 백엔드 프레임워크 감지 (Express, FastAPI, Spring, Flask 등)
-
-2. **기존 결제 코드 확인**
-   - 이미 포트원 연동이 되어 있는지 검색
-   - 기존 V1 코드가 있다면 마이그레이션 필요 여부 확인
+```
+질문: "추가 기능 요구사항이 있으신가요?"
+```
 
 ---
 
 ## Phase 3: 코드 생성 에이전트 호출
 
-프로젝트 분석이 완료되면 **payment-code-generator** 에이전트를 호출합니다.
-
-Task 도구를 사용하여 다음 정보와 함께 에이전트를 호출합니다:
-
-```
-subagent_type: "portone-integration:payment-code-generator"
-prompt: |
-  사용자 프로젝트에 포트원 결제 연동 코드를 생성해주세요.
-
-  ## 확정된 정보
-  - 포트원 버전: [V1 또는 V2]
-  - 결제 유형: [checkout/billing/keyin/identity]
-  - PG사: [선택된 PG사]
-
-  ## 프로젝트 환경
-  - 프론트엔드: [감지된 프레임워크]
-  - 백엔드: [감지된 프레임워크]
-  - TypeScript 사용: [예/아니오]
-
-  ## 요청 사항
-  1. MCP 도구로 공식 예시 코드 조회 (선택된 PG사 기준)
-  2. 프로젝트 환경에 맞게 코드 커스터마이징
-  3. 필요한 파일들 생성
-  4. 환경 변수 설정 안내
-```
+Launch the **payment-code-generator** agent.
 
 ---
 
 ## Phase 4: 코드 검증 에이전트 호출
 
-코드 생성이 완료되면 **integration-validator** 에이전트를 호출하여 검증합니다.
-
-Task 도구를 사용하여 에이전트를 호출합니다:
-
-```
-subagent_type: "portone-integration:integration-validator"
-prompt: |
-  방금 생성된 포트원 결제 연동 코드를 검증해주세요.
-
-  ## 검증 대상
-  - 포트원 버전: [V1 또는 V2]
-  - 결제 유형: [checkout/billing/keyin/identity]
-  - PG사: [선택된 PG사]
-
-  ## 검증 항목
-  1. SDK/API 사용법이 공식 문서와 일치하는지
-  2. 필수 파라미터가 모두 포함되어 있는지
-  3. 선택한 PG사에 맞는 channelKey 설정
-  4. 보안 설정이 올바른지 (API Secret 노출 여부 등)
-  5. 환경 변수 설정이 적절한지
-
-  검증 결과를 리포트 형식으로 제공하고,
-  문제가 있다면 구체적인 수정 방법을 안내해주세요.
-```
+Launch the **integration-validator** agent.
 
 ---
 
@@ -210,10 +158,10 @@ prompt: |
 
 위 단계를 순차적으로 실행합니다:
 
-1. **Phase 1** 시작: 인자를 확인하고, 없으면 AskUserQuestion으로 버전, 결제 유형, PG사를 물어봅니다.
+1. **Phase 1** 시작: $ARGUMENTS 를 확인하고, 없으면 AskUserQuestion으로 버전, 결제 유형, PG사를 물어봅니다.
 2. **Phase 2**: 프로젝트 환경을 분석합니다.
-3. **Phase 3**: payment-code-generator 에이전트로 코드를 생성합니다.
-4. **Phase 4**: integration-validator 에이전트로 코드를 검증합니다.
+3. **Phase 3**: Launch the **payment-code-generator** agent.
+4. **Phase 4**: Launch the **integration-validator** agent.
 5. **Phase 5**: 최종 안내를 제공합니다.
 
 ---

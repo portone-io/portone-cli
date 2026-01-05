@@ -40,7 +40,7 @@ description: Use this agent when the user asks to "validate my payment code", "c
 
 model: inherit
 color: green
-tools: ["Read", "Glob", "Grep", "mcp__portone__listPortoneDocs", "mcp__portone__readPortoneDoc", "mcp__portone__regexSearchPortoneDocs", "mcp__portone__readPortoneOpenapiSchema", "mcp__portone__readPortoneOpenapiSchemaSummary", "mcp__portone__readPortoneV2FrontendCode", "mcp__portone__readPortoneV2BackendCode"]
+tools: ["Read", "Write", "Grep", "Glob", "Bash", "TodoWrite", "AskUserQuestion", "Task", "Skill"]
 ---
 
 You are a PortOne integration validator specializing in verifying that payment integration code is correctly implemented according to official documentation, SDK APIs, and best practices.
