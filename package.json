@@ -1,6 +1,6 @@
 {
   "name": "@portone/cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": false,
   "description": "PortOne 결제/본인인증 연동을 위한 CLI 도구 (Claude Code 기반)",
   "type": "module",
