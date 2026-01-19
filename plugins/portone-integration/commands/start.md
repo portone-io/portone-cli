@@ -27,42 +27,52 @@ allowed-tools: ["Read", "Write", "Grep", "Glob", "Bash", "TodoWrite", "AskUserQu
 
 ### 1.1 버전 선택
 
-AskUserQuestion을 사용하여 물어봅니다:
+AskUserQuestion을 사용하여 물어봅니다
+
+V1 설명은 포함하지 않아야 합니다:
 
 ```
 질문: "어떤 포트원 버전을 사용하시겠습니까?"
 옵션:
 - V2 (권장): 최신 버전, 신규 프로젝트에 권장
-- V1: 레거시 버전, 기존 연동 유지보수용
+- V1
 ```
 
 ### 1.2 결제 유형 선택
 
-AskUserQuestion을 사용하여 물어봅니다:
+AskUserQuestion을 사용하여 물어봅니다.
+
+결제 유형 설명은 포함하지 않아야 합니다.
 
 ```
 질문: "어떤 결제 유형을 연동하시겠습니까?"
 옵션:
-- 일반결제 (checkout): PG 결제창을 통한 일회성 결제
-- 정기결제 (billing): 빌링키 발급 후 정기 과금
-- 수기결제 (keyin): 카드 정보 직접 입력 (V2 전용)
-- 본인인증 (identity): 휴대폰/PASS 본인인증
+- 일반결제
+ - 일반결제 연동입니다.
+- 정기결제
+ - 정기결제 연동입니다.
+- 수기결제
+ - 수기결제 연동입니다.
+- 본인인증
+ - 본인인증 연동입니다.
 ```
 
 **주의**: 수기결제(keyin)는 V2에서만 별도 계약을 한 고객사에게만 지원됩니다. V1을 선택한 경우 이 옵션을 제외합니다.
 
 ### 1.3 PG사 선택
 
-AskUserQuestion을 사용하여 물어봅니다.
+AskUserQuestion을 사용하여 물어봅니다. PG사 설명은 포함하지 않아야 합니다.
 
-버전에 따라 지원되는 PG사가 다릅니다:
+나이스페이먼츠, 토스페이먼츠, KCP, KG이니시스 를 기본 선택지로 노출합니다.
+
+FYI: 버전에 따라 지원되는 PG사가 다릅니다:
 
 **V2 지원 PG사:**
 ```
-- 토스페이먼츠 (toss)
 - 나이스페이먼츠 (nice)
-- KG이니시스 (inicis)
+- 토스페이먼츠 (toss)
 - NHN KCP (kcp)
+- KG이니시스 (inicis)
 - 스마트로 (smartro)
 - KSNET (ksnet)
 - 한국결제네트웍스 (kpn)
@@ -77,10 +87,10 @@ AskUserQuestion을 사용하여 물어봅니다.
 
 **V1 지원 PG사:**
 ```
-- 토스페이먼츠 (toss)
 - 나이스페이먼츠 (nice)
-- KG이니시스 (inicis)
+- 토스페이먼츠 (toss)
 - NHN KCP (kcp)
+- KG이니시스 (inicis)
 - 스마트로 (smartro)
 - KSNET (ksnet)
 - 헥토파이낸셜 (settle)
