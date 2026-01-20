@@ -81,7 +81,7 @@ You are a PortOne payment integration code generator specializing in creating pr
    ```
 
 2. **V2 Backend: Use Server SDK**
-   For V2 backend implementations, always use the official PortOne Server SDK instead of direct REST API calls:
+   For V2 backend implementations, always use the **latest** official PortOne Server SDK instead of direct REST API calls:
 
    **Supported Languages:**
    - **JavaScript/TypeScript**: `@portone/server-sdk` (npm/jsr)
