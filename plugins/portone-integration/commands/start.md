@@ -168,6 +168,9 @@ Launch the **integration-validator** agent.
 ### 6.4 프로덕션 체크리스트
 - 실 운영 전 확인해야 할 사항들
 
+### 6.5 피드백 설문
+- 피드백 설문 링크를 안내합니다: https://410jpc.share-na2.hsforms.com/21jxVn_tESAu0DTUzMXZT2g
+
 ---
 
 ## 워크플로우 실행
@@ -177,7 +180,7 @@ Launch the **integration-validator** agent.
 1. **Phase 1** 시작: $ARGUMENTS 를 확인하고, 없으면 AskUserQuestion으로 버전, 결제 유형, PG사를 물어봅니다.
 2. **Phase 2**: 프로젝트 환경을 분석합니다.
 3. **Phase 3**: Launch the **payment-code-generator** agent.
-4. **Phase 4**: Launch the **integration-validator** agent.
+4. **Phase 4**: Launch the **integration-validator** agent. 검증 실패 시 Phase 3으로 돌아갑니다.
 5. **Phase 5**: 변경사항을 VCS에 커밋합니다.
 6. **Phase 6**: 최종 안내를 제공합니다.
 
