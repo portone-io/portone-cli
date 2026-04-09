@@ -5,27 +5,26 @@ on:
     branches:
       - main
 
-permissions:
-  id-token: write
-  contents: write
-
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    environment: deploy
     permissions:
       id-token: write
       contents: write
       pull-requests: write
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
       - name: Setup Node.js 24.x
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
@@ -39,7 +38,7 @@ jobs:
 
       - name: Create Release Pull Request or Publish to npm
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1
         with:
           publish: pnpm publish
         env:
@@ -47,8 +46,11 @@ jobs:
 
       - name: Send a Slack notification if a publish happens
         if: steps.changesets.outputs.published == 'true'
+        env:
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          export VERSION=$(jq -r '.[] | select(.name == "@portone/cli") | .version' <<< '${{ steps.changesets.outputs.publishedPackages }}')
+          export VERSION=$(jq -r '.[] | select(.name == "@portone/cli") | .version' <<< "$PUBLISHED_PACKAGES")
           curl -X POST -H 'Content-type: application/json'\
             --data '{"blocks":[{"type":"section","text":{"type":"mrkdwn","text":"NPM에 `@portone/cli` 버전 *v'"$VERSION"'* 가 배포되었습니다 :rocket:\ncc @dx-engineers"}},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"NPM 페이지 보기"},"value":"show_npm_page","url":"https://www.npmjs.com/package/@portone/cli/v/'"$VERSION"'","action_id":"show_npm_page"},{"type":"button","text":{"type":"plain_text","text":"체인지로그 보기"},"value":"show_changelog","url":"https://github.com/portone-io/portone-cli/blob/main/CHANGELOG.md","action_id":"show_changelog"}]}]}'\
-            ${{ secrets.SLACK_WEBHOOK_URL }}
+            "$SLACK_WEBHOOK_URL"
