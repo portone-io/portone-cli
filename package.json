@@ -30,6 +30,10 @@
     "cli"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/portone-io/portone-cli"
+  },
   "dependencies": {
     "@inquirer/prompts": "^8.0.2",
     "chalk": "^5.6.2",
