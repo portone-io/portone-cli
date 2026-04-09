@@ -2,7 +2,7 @@
   "name": "@portone/cli",
   "version": "0.0.2",
   "private": false,
-  "description": "PortOne 결제/본인인증 연동을 위한 CLI 도구 (Claude Code 기반)",
+  "description": "PortOne 결제/본인인증 연동을 위한 CLI 도구 (Claude Code/Codex 지원)",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -17,13 +17,16 @@
   "files": [
     "dist",
     "bin",
-    "README.md"
+    "README.md",
+    "plugins",
+    ".agents"
   ],
   "keywords": [
     "portone",
     "payment",
     "identity-verification",
     "claude-code",
+    "codex",
     "cli"
   ],
   "license": "MIT",
@@ -31,6 +34,7 @@
     "@inquirer/prompts": "^8.0.2",
     "chalk": "^5.6.2",
     "commander": "^12.1.0",
+    "inquirer": "^13.3.2",
     "ora": "^9.0.0"
   },
   "devDependencies": {
@@ -42,5 +46,5 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "pnpm@10.23.0+sha512.21c4e5698002ade97e4efe8b8b4a89a8de3c85a37919f957e7a0f30f38fbc5bbdd05980ffe29179b2fb6e6e691242e098d945d1601772cad0fef5fb6411e2a4b"
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
 }

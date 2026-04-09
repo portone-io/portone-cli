@@ -11,8 +11,9 @@ program
 
 program
   .command('setup')
-  .description('Claude Code와 PortOne MCP 서버를 설정하고 연동을 시작합니다')
+  .description('Claude Code 또는 Codex에 PortOne 플러그인을 설정합니다')
   .option('--allow-dirty', 'git이 clean 상태가 아니어도 실행을 허용합니다')
+  .option('--assistant <assistant>', '설정할 assistant (claude|codex|both)')
   .action(setup);
 
 program.parse();

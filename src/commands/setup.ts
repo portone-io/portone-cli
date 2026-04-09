@@ -1,14 +1,21 @@
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import ora from 'ora';
 import chalk from 'chalk';
-import { checkClaudeInstalled } from '../steps/check-claude.js';
-import { installClaude, updateClaude } from '../steps/install-claude.js';
+import {
+  ASSISTANTS,
+  isAssistantSelection,
+  resolveAssistantTargets,
+  type AssistantSelection
+} from '../assistants.js';
+import { checkAssistantInstalled } from '../steps/check-assistant.js';
+import { installAssistant, updateAssistant } from '../steps/install-assistant.js';
 import { configurePlugin } from '../steps/configure-plugin.js';
 import { showIntegrationGuide } from '../steps/run-integration.js';
 import { isGitClean } from '../steps/check-git.js';
 
 export interface SetupOptions {
   allowDirty?: boolean;
+  assistant?: string;
 }
 
 export async function setup(options: SetupOptions = {}) {
@@ -26,57 +33,83 @@ export async function setup(options: SetupOptions = {}) {
     gitSpinner.succeed('Git 상태 확인됨');
   }
 
-  // Step 1: Claude Code 설치 확인
-  let spinner = ora('Claude Code 설치 확인 중...').start();
-  const isClaudeInstalled = await checkClaudeInstalled();
+  const assistantSelection = await resolveAssistantSelection(options.assistant);
+  const assistants = resolveAssistantTargets(assistantSelection);
 
-  if (!isClaudeInstalled) {
-    spinner.warn('Claude Code가 설치되어 있지 않습니다');
+  for (const assistant of assistants) {
+    const definition = ASSISTANTS[assistant];
 
-    const shouldInstall = await confirm({
-      message: 'Claude Code를 설치하시겠습니까?',
-      default: true
-    });
+    let spinner = ora(`${definition.displayName} 설치 확인 중...`).start();
+    const installed = await checkAssistantInstalled(assistant);
 
-    if (shouldInstall) {
-      spinner = ora('Claude Code 설치 중...').start();
-      try {
-        await installClaude();
-        spinner.succeed('Claude Code 설치 완료');
-      } catch (error) {
-        spinner.fail('Claude Code 설치 실패');
-        console.log(chalk.yellow('\nClaude Code 수동 설치: npm install -g @anthropic-ai/claude-code'));
+    if (!installed) {
+      spinner.warn(`${definition.displayName}가 설치되어 있지 않습니다`);
+
+      const shouldInstall = await confirm({
+        message: `${definition.displayName}를 설치하시겠습니까?`,
+        default: true
+      });
+
+      if (shouldInstall) {
+        spinner = ora(`${definition.displayName} 설치 중...`).start();
+        try {
+          await installAssistant(assistant);
+          spinner.succeed(`${definition.displayName} 설치 완료`);
+        } catch {
+          spinner.fail(`${definition.displayName} 설치 실패`);
+          console.log(chalk.yellow(`\n${definition.displayName} 수동 설치: ${definition.installHint}`));
+          process.exit(1);
+        }
+      } else {
+        console.log(chalk.yellow(`\n${definition.displayName} 수동 설치: ${definition.installHint}`));
         process.exit(1);
       }
     } else {
-      console.log(chalk.yellow('\nClaude Code 수동 설치: npm install -g @anthropic-ai/claude-code'));
+      spinner.succeed(`${definition.displayName} 설치 확인됨`);
+    }
+
+    if (definition.updateCommand) {
+      spinner = ora(`${definition.displayName} 업데이트 중...`).start();
+      try {
+        await updateAssistant(assistant);
+        spinner.succeed(`${definition.displayName} 업데이트 완료`);
+      } catch {
+        spinner.warn(`${definition.displayName} 업데이트 실패 (계속 진행합니다)`);
+      }
+    }
+
+    spinner = ora(`PortOne 플러그인 설정 중... (${definition.displayName})`).start();
+    try {
+      await configurePlugin(assistant, process.cwd());
+      spinner.succeed(`플러그인 설정 완료 (${definition.displayName})`);
+    } catch (error) {
+      spinner.fail(`플러그인 설정 실패 (${definition.displayName})`);
+      console.error(chalk.red(error instanceof Error ? error.message : String(error)));
       process.exit(1);
     }
-  } else {
-    spinner.succeed('Claude Code 설치 확인됨');
   }
 
-  // Step 2: Claude Code 업데이트
-  spinner = ora('Claude Code 업데이트 중...').start();
-  try {
-    await updateClaude();
-    spinner.succeed('Claude Code 업데이트 완료');
-  } catch (error) {
-    spinner.warn('Claude Code 업데이트 실패 (계속 진행합니다)');
-  }
-
-  // Step 3: 플러그인 설정
-  spinner = ora('PortOne 플러그인 설정 중...').start();
-  try {
-    await configurePlugin(process.cwd());
-    spinner.succeed('플러그인 설정 완료');
-  } catch (error) {
-    spinner.fail('플러그인 설정 실패');
-    console.error(chalk.red(error instanceof Error ? error.message : String(error)));
-    process.exit(1);
-  }
-
-  // Step 4: 안내 출력
   console.log(chalk.green('\n✅ 설정이 완료되었습니다!'));
-  showIntegrationGuide();
+  showIntegrationGuide(assistants);
+}
+
+async function resolveAssistantSelection(input?: string): Promise<AssistantSelection> {
+  if (input) {
+    if (!isAssistantSelection(input)) {
+      console.log(chalk.red(`지원하지 않는 assistant입니다: ${input}`));
+      process.exit(1);
+    }
+
+    return input;
+  }
+
+  return select<AssistantSelection>({
+    message: '어떤 assistant를 설정하시겠습니까?',
+    default: 'both',
+    choices: [
+      { name: 'Claude Code + Codex', value: 'both' },
+      { name: 'Claude Code', value: 'claude' },
+      { name: 'Codex', value: 'codex' }
+    ]
+  });
 }

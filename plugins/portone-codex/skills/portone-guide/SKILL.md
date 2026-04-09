@@ -1,12 +1,12 @@
 ---
 name: PortOne Integration Guide
-description: This skill should be used when the user asks about "포트원 연동", "PortOne integration", "결제 연동", "PG 연동", "billing key", "빌링키", "정기결제", "웹훅", "payment API", or needs guidance on implementing payment functionality with PortOne. Provides comprehensive guidance for V1 and V2 API integration.
+description: This skill should be used when the user asks about "포트원 연동", "PortOne integration", "결제 연동", "PG 연동", "billing key", "빌링키", "정기결제", "웹훅", "payment API", or needs guidance on implementing payment functionality with PortOne. Provides comprehensive guidance for V1 and V2 API integration and should coordinate with the payment-code-generator or integration-validator skills when implementation or verification is required.
 version: 1.0.0
 ---
 
 # PortOne Integration Guide
 
-포트원(PortOne) 결제 연동에 필요한 핵심 개념과 MCP 도구 활용법을 안내한다. 구현이 필요하면 `payment-code-generator` 에이전트를, 검증이 필요하면 `integration-validator` 에이전트를 사용한다.
+포트원(PortOne) 결제 연동에 필요한 핵심 개념과 MCP 도구 활용법을 안내한다. 코드 생성이 필요하면 `payment-code-generator` 스킬을, 검증이 필요하면 `integration-validator` 스킬을 함께 사용한다.
 
 ## Overview
 

@@ -1,0 +1,25 @@
+{
+  "name": "portone-integration",
+  "version": "1.0.0",
+  "description": "PortOne payment integration workflow for Claude Code.",
+  "author": {
+    "name": "CirnoV (Sickle)",
+    "email": "cirnov59@gmail.com",
+    "url": "https://github.com/cirnov"
+  },
+  "homepage": "https://github.com/portone-io/portone-cli",
+  "repository": "https://github.com/portone-io/portone-cli",
+  "license": "MIT",
+  "keywords": [
+    "portone",
+    "payment",
+    "billing",
+    "checkout",
+    "identity"
+  ],
+  "commands": [
+    "./commands/start.md"
+  ],
+  "agents": "./agents/",
+  "mcpServers": "./.mcp.json"
+}

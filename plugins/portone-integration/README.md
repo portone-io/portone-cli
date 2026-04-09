@@ -65,7 +65,7 @@
 /portone-integration:review src/api/pay.ts   # 특정 파일 검토
 ```
 
-### 에이전트
+### Claude Code 에이전트
 
 플러그인은 다음 상황에서 자동으로 에이전트를 활성화합니다:
 

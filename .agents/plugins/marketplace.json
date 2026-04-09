@@ -1,0 +1,20 @@
+{
+  "name": "portone",
+  "interface": {
+    "displayName": "PortOne Plugins"
+  },
+  "plugins": [
+    {
+      "name": "portone-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/portone-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
