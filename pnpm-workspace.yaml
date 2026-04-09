@@ -1,12 +1,13 @@
-
 blockExoticSubdeps: true
+
+engineStrict: true
 
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude: []
 onlyBuiltDependencies:
   - esbuild
 overrides:
-  picomatch@<2.3.2: '>=2.3.2'
+  picomatch@<2.3.2: ">=2.3.2"
 
 trustPolicy: no-downgrade
 trustPolicyIgnoreAfter: 525960
