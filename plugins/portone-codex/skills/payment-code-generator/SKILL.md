@@ -1,5 +1,5 @@
 ---
-name: PortOne Payment Code Generator
+name: payment-code-generator
 description: Use this skill when the user asks to implement PortOne payment integration code, add checkout or billing flows, migrate to PortOne V2, or generate payment-related backend/frontend changes. It should inspect the project first, confirm the required PortOne version and payment type, then generate project-specific code using the PortOne MCP server as the source of truth.
 ---
 

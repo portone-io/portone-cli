@@ -1,5 +1,5 @@
 ---
-name: PortOne Integration Guide
+name: portone-guide
 description: This skill should be used when the user asks about "포트원 연동", "PortOne integration", "결제 연동", "PG 연동", "billing key", "빌링키", "정기결제", "웹훅", "payment API", or needs guidance on implementing payment functionality with PortOne. Provides comprehensive guidance for V1 and V2 API integration and should coordinate with the payment-code-generator or integration-validator skills when implementation or verification is required.
 version: 1.0.0
 ---
@@ -32,25 +32,19 @@ version: 1.0.0
 
 결제 유형을 선택할 때 다음 설명을 참고하여 사용자에게 안내한다:
 
-### 일반결제 (인증결제)
+### 단건결제
 - PG사 결제창을 통한 결제
 - 카드, 계좌이체, 가상계좌, 휴대폰 결제 등
 - 일회성 결제에 적합
 - **사용 시점**: 쇼핑몰, 단건 상품 구매
 
-### 정기결제 (빌링키 결제)
-- 빌링키 발급 후 정기적으로 결제
+### 빌링결제
+- 빌링키 발급 후 서버에서 원하는 시점에 결제 호출
 - 구독 서비스, 월정액 서비스에 적합
 - **사용 시점**: SaaS, 구독 서비스, 정기 배송
 
-### 수기결제 (키인결제)
-- 카드 정보 직접 입력 결제
-- 고객 인증 없이 결제 가능
-- B2B 거래, 전화 주문에 적합
-- **사용 시점**: 콜센터, B2B 거래
-
 ### 본인인증
-- 휴대폰/신용카드 본인인증
+- 휴대폰 본인인증 또는 이니시스 통합인증
 - 회원가입, 성인인증에 사용
 - **사용 시점**: 회원가입, 연령 제한 서비스
 
