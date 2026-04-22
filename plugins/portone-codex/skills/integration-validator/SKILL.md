@@ -1,5 +1,5 @@
 ---
-name: PortOne Integration Validator
+name: integration-validator
 description: Use this skill when the user asks to review, validate, or troubleshoot PortOne payment integration code. It should compare the implementation against PortOne official examples and docs, identify concrete bugs or compliance issues, and provide file-specific fixes.
 ---
 
