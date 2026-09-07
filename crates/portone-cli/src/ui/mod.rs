@@ -1,3 +1,5 @@
+pub mod pager;
+
 use std::cell::RefCell;
 use std::io::{IsTerminal, Write};
 use std::rc::Rc;

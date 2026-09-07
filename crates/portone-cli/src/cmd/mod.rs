@@ -1,3 +1,4 @@
+pub mod api;
 pub mod auth;
 pub mod setup;
 
@@ -15,6 +16,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(about = "Make an authenticated PortOne V2 API request")]
+    Api(api::ApiArgs),
     #[command(about = "Authenticate with PortOne")]
     Auth(auth::AuthArgs),
     #[command(about = "Install PortOne plugins for AI coding assistants")]
@@ -23,6 +26,7 @@ pub enum Command {
 
 pub fn run(f: &mut Factory, command: Command) -> Result<(), CliError> {
     match command {
+        Command::Api(args) => api::run(f, args),
         Command::Auth(args) => auth::run(f, args),
         Command::Setup(args) => setup::run(f, args),
     }
