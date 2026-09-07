@@ -30,6 +30,7 @@ fn spawn_login(
         .env_remove("PORTONE_OAUTH_CLIENT_ID")
         .env_remove("PORTONE_BROWSER")
         .env_remove("BROWSER")
+        .env("PORTONE_LANG", "en")
         .env("NO_COLOR", "1")
         .env("PORTONE_CONFIG_DIR", config_dir)
         .env("PORTONE_CONSOLE_URL", server.base_url())

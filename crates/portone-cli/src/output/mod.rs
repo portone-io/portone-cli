@@ -32,8 +32,9 @@ impl Pipeline {
         if let Some(filter) = &self.jq {
             run_jq(filter, w, bytes, self.color, self.tty)
         } else if let Some(pages) = &mut self.slurp_pages {
-            let value: Value = serde_json::from_slice(bytes)
-                .map_err(|e| CliError::Other(anyhow!("failed to parse response body: {e}")))?;
+            let value: Value = serde_json::from_slice(bytes).map_err(|e| {
+                CliError::Other(anyhow!(crate::message!("core-response-parse", error = e)))
+            })?;
             pages.push(value);
             Ok(())
         } else {
@@ -61,8 +62,9 @@ impl Pipeline {
 
 pub fn emit_json_plain(w: &mut dyn Write, bytes: &[u8], color: bool) -> Result<(), CliError> {
     if color {
-        let value: Value = serde_json::from_slice(bytes)
-            .map_err(|e| CliError::Other(anyhow!("failed to parse response body: {e}")))?;
+        let value: Value = serde_json::from_slice(bytes).map_err(|e| {
+            CliError::Other(anyhow!(crate::message!("core-response-parse", error = e)))
+        })?;
         jsoncolor::write_colored(w, &value, "  ", 0)?;
     } else {
         w.write_all(bytes)?;
@@ -80,14 +82,14 @@ pub fn emit_raw(
         let head = &bytes[..bytes.len().min(512)];
         if head.contains(&0) {
             if tty {
-                return Err(CliError::Other(anyhow!(
-                    "refusing to output binary content to the terminal; redirect or pipe stdout, or pass --allow-escape-sequences"
-                )));
+                return Err(CliError::Other(anyhow!(crate::message!(
+                    "core-output-binary"
+                ))));
             }
         } else if bytes.contains(&0x1B) {
-            return Err(CliError::Other(anyhow!(
-                "the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway"
-            )));
+            return Err(CliError::Other(anyhow!(crate::message!(
+                "core-output-escapes"
+            ))));
         }
     }
     w.write_all(bytes)?;
@@ -117,9 +119,12 @@ fn compile_jq(code: &str) -> anyhow::Result<JqFilter> {
             .chain(jaq_json::defs()),
     );
     let arena = Arena::default();
-    let modules = loader
-        .load(&arena, program)
-        .map_err(|errs| anyhow!("invalid jq filter: {errs:?}"))?;
+    let modules = loader.load(&arena, program).map_err(|errs| {
+        anyhow!(crate::message!(
+            "core-jq-invalid",
+            error = format!("{errs:?}")
+        ))
+    })?;
     jaq_core::Compiler::default()
         .with_funs(
             jaq_core::funs()
@@ -127,7 +132,12 @@ fn compile_jq(code: &str) -> anyhow::Result<JqFilter> {
                 .chain(jaq_json::funs()),
         )
         .compile(modules)
-        .map_err(|errs| anyhow!("invalid jq filter: {errs:?}"))
+        .map_err(|errs| {
+            anyhow!(crate::message!(
+                "core-jq-invalid",
+                error = format!("{errs:?}")
+            ))
+        })
 }
 
 fn run_jq(
@@ -138,7 +148,7 @@ fn run_jq(
     tty: bool,
 ) -> Result<(), CliError> {
     let input = jaq_json::read::parse_single(bytes)
-        .map_err(|e| CliError::Other(anyhow!("failed to parse response body: {e}")))?;
+        .map_err(|e| CliError::Other(anyhow!(crate::message!("core-response-parse", error = e))))?;
     let ctx = jaq_core::Ctx::<JqData>::new(&filter.lut, jaq_core::Vars::new([]));
     for result in filter.id.run((ctx, input)).map(jaq_core::unwrap_valr) {
         let val = result.map_err(|e| CliError::Other(anyhow!("jq: {e}")))?;
@@ -157,8 +167,9 @@ fn emit_jq_val(w: &mut dyn Write, val: &Val, color: bool, tty: bool) -> Result<(
         Val::Bool(_) | Val::Num(_) => writeln!(w, "{val}")?,
         Val::Arr(_) | Val::Obj(_) => {
             if color || tty {
-                let value: Value = serde_json::from_str(&val.to_string())
-                    .map_err(|e| CliError::Other(anyhow!("failed to render jq output: {e}")))?;
+                let value: Value = serde_json::from_str(&val.to_string()).map_err(|e| {
+                    CliError::Other(anyhow!(crate::message!("core-jq-render", error = e)))
+                })?;
                 if color {
                     jsoncolor::write_colored(w, &value, "  ", 0)?;
                 } else {

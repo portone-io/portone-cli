@@ -1,11 +1,14 @@
 use std::cell::OnceCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::auth::store::{KeyringStore, SecretStore};
 use crate::config::Config;
+use crate::i18n::Localizer;
 use crate::ui::IoStreams;
 
 pub struct Factory {
+    pub localizer: Arc<Localizer>,
     pub io: IoStreams,
     config: OnceCell<Config>,
     agent: OnceCell<ureq::Agent>,
@@ -14,11 +17,16 @@ pub struct Factory {
 
 impl Factory {
     pub fn detect() -> Self {
-        Self::new(IoStreams::detect())
+        Self::with_localizer(IoStreams::detect(), Localizer::detect())
     }
 
     pub fn new(io: IoStreams) -> Self {
+        Self::with_localizer(io, Localizer::english())
+    }
+
+    pub fn with_localizer(io: IoStreams, localizer: Localizer) -> Self {
         Self {
+            localizer: Arc::new(localizer),
             io,
             config: OnceCell::new(),
             agent: OnceCell::new(),

@@ -1,3 +1,4 @@
+use crate::i18n::Localizer;
 use std::io::{BufWriter, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 
@@ -20,13 +21,23 @@ impl<'a> Pager<'a> {
         tty: bool,
         enabled: bool,
     ) -> Pager<'a> {
+        Self::start_localized(out, err, tty, enabled, crate::i18n::english())
+    }
+
+    pub fn start_localized(
+        out: &'a mut dyn Write,
+        err: &mut dyn Write,
+        tty: bool,
+        enabled: bool,
+        localizer: &Localizer,
+    ) -> Pager<'a> {
         if enabled && tty {
             let command = resolve_command(
                 std::env::var("PORTONE_PAGER").ok(),
                 std::env::var("PAGER").ok(),
             );
             if let Some(command) = command {
-                match spawn_pager(&command) {
+                match spawn_pager(&command, localizer) {
                     Ok((child, stdin)) => {
                         return Pager {
                             output: Output::Pager {
@@ -36,7 +47,11 @@ impl<'a> Pager<'a> {
                         };
                     }
                     Err(e) => {
-                        let _ = writeln!(err, "failed to start pager: {e}");
+                        let _ = writeln!(
+                            err,
+                            "{}",
+                            crate::tr!(localizer, "core-pager-start", error = e.to_string())
+                        );
                     }
                 }
             }
@@ -91,12 +106,13 @@ fn resolve_command(portone_pager: Option<String>, pager: Option<String>) -> Opti
     }
 }
 
-fn spawn_pager(pager_command: &str) -> std::io::Result<(Child, ChildStdin)> {
+fn spawn_pager(pager_command: &str, localizer: &Localizer) -> std::io::Result<(Child, ChildStdin)> {
     let invalid =
         |msg: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg.to_string());
-    let words = split_shell_words(pager_command).ok_or_else(|| invalid("invalid pager command"))?;
+    let words = split_shell_words(pager_command)
+        .ok_or_else(|| invalid(&crate::tr!(localizer, "core-pager-invalid")))?;
     let Some((program, args)) = words.split_first() else {
-        return Err(invalid("empty pager command"));
+        return Err(invalid(&crate::tr!(localizer, "core-pager-empty")));
     };
     let mut command = Command::new(program);
     command.args(args);
@@ -264,15 +280,15 @@ mod tests {
 
     #[test]
     fn spawn_fails_immediately_for_missing_command() {
-        assert!(spawn_pager("definitely-missing-pager-xyz").is_err());
-        assert!(spawn_pager("'unclosed").is_err());
-        assert!(spawn_pager("").is_err());
+        assert!(spawn_pager("definitely-missing-pager-xyz", crate::i18n::english()).is_err());
+        assert!(spawn_pager("'unclosed", crate::i18n::english()).is_err());
+        assert!(spawn_pager("", crate::i18n::english()).is_err());
     }
 
     #[cfg(unix)]
     #[test]
     fn spawn_write_finish() {
-        let (child, stdin) = spawn_pager("cat").unwrap();
+        let (child, stdin) = spawn_pager("cat", crate::i18n::english()).unwrap();
         let mut pager = Pager {
             output: Output::Pager {
                 child,

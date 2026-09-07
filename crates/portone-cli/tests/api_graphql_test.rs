@@ -10,6 +10,7 @@ fn portone(config_dir: &std::path::Path, cache_dir: &std::path::Path) -> Command
         .env_remove("CLICOLOR_FORCE")
         .env_remove("PORTONE_PAGER")
         .env_remove("PAGER")
+        .env("PORTONE_LANG", "en")
         .env("NO_COLOR", "1")
         .env("PORTONE_CONFIG_DIR", config_dir)
         .env("PORTONE_CACHE_DIR", cache_dir);

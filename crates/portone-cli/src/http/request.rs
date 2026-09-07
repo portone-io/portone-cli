@@ -1,6 +1,7 @@
 use std::io::Read;
 
-use anyhow::{Context, anyhow};
+use crate::i18n::{LocalizedContext, Localizer};
+use anyhow::anyhow;
 
 use crate::error::CliError;
 use crate::http::response::HttpResponse;
@@ -31,22 +32,37 @@ pub fn build_url(base_url: &str, endpoint: &str) -> String {
 }
 
 pub fn parse_headers(raw: &[String]) -> Result<Vec<(String, String)>, CliError> {
+    parse_headers_localized(raw, crate::i18n::english())
+}
+
+pub fn parse_headers_localized(
+    raw: &[String],
+    localizer: &Localizer,
+) -> Result<Vec<(String, String)>, CliError> {
     let mut headers = Vec::with_capacity(raw.len());
     for h in raw {
         let Some(idx) = h.find(':') else {
-            return Err(CliError::Flag(format!(
-                "header {h:?} requires a value separated by ':'"
+            return Err(CliError::Flag(crate::tr!(
+                localizer,
+                "core-header-value",
+                header = format!("{h:?}")
             )));
         };
         let name = h[..idx].trim().to_string();
         let value = h[idx + 1..].trim().to_string();
         if ureq::http::HeaderName::from_bytes(name.as_bytes()).is_err() {
-            return Err(CliError::Flag(format!("invalid header name: {name:?}")));
+            return Err(CliError::Flag(crate::tr!(
+                localizer,
+                "core-header-name",
+                name = format!("{name:?}")
+            )));
         }
         if name.eq_ignore_ascii_case("content-length") {
             if value.parse::<u64>().is_err() {
-                return Err(CliError::Flag(format!(
-                    "invalid Content-Length value: {value:?}"
+                return Err(CliError::Flag(crate::tr!(
+                    localizer,
+                    "core-content-length",
+                    value = format!("{value:?}")
                 )));
             }
             continue;
@@ -115,10 +131,10 @@ pub fn read_input(path: &str) -> anyhow::Result<Vec<u8>> {
         let mut buf = Vec::new();
         std::io::stdin()
             .read_to_end(&mut buf)
-            .context("failed to read request body from stdin")?;
+            .lcontext(crate::message!("core-input-stdin"))?;
         Ok(buf)
     } else {
-        std::fs::read(path).with_context(|| format!("failed to read request body from {path}"))
+        std::fs::read(path).with_lcontext(|| crate::message!("core-input-file", path = path))
     }
 }
 
@@ -145,7 +161,7 @@ pub fn send(
     use ureq::http;
 
     let http_method = http::Method::from_bytes(method.as_bytes())
-        .map_err(|_| anyhow!("invalid HTTP method: {method}"))?;
+        .map_err(|_| anyhow!(crate::message!("core-http-method", method = method)))?;
     let mut builder = http::Request::builder().method(http_method).uri(url);
     for (name, value) in headers {
         builder = builder.header(name, value);
@@ -155,12 +171,12 @@ pub fn send(
         Some(bytes) => agent.run(
             builder
                 .body(bytes.to_vec())
-                .map_err(|e| anyhow!("failed to build request: {e}"))?,
+                .lcontext(crate::message!("core-request-build"))?,
         ),
         None => agent.run(
             builder
                 .body(())
-                .map_err(|e| anyhow!("failed to build request: {e}"))?,
+                .lcontext(crate::message!("core-request-build"))?,
         ),
     }?;
 
@@ -180,7 +196,7 @@ pub fn send(
         .into_with_config()
         .limit(u64::MAX)
         .read_to_vec()
-        .context("failed to read response body")?;
+        .lcontext(crate::message!("core-response-read"))?;
 
     Ok(HttpResponse {
         status,

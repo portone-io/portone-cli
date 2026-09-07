@@ -5,5 +5,6 @@ pub mod config;
 pub mod error;
 pub mod factory;
 pub mod http;
+pub mod i18n;
 pub mod output;
 pub mod ui;

@@ -15,6 +15,7 @@ use crate::http::cache::Cache;
 use crate::http::pagination::{Advance, Paginator};
 use crate::http::response::{self, HttpResponse};
 use crate::http::{request, verbose};
+use crate::i18n::Localizer;
 use crate::output;
 use crate::ui::pager::Pager;
 
@@ -229,7 +230,8 @@ fn parse_duration(value: &str) -> Result<Duration, String> {
 }
 
 pub fn run(f: &mut Factory, args: ApiArgs) -> Result<(), CliError> {
-    validate(&args)?;
+    let localizer = f.localizer.clone();
+    validate_localized(&args, &localizer)?;
 
     let mut params = {
         let mut stdin = std::io::stdin().lock();
@@ -255,7 +257,7 @@ pub fn run(f: &mut Factory, args: ApiArgs) -> Result<(), CliError> {
         args.is_graphql(),
     );
 
-    let mut headers = request::parse_headers(&args.headers)?;
+    let mut headers = request::parse_headers_localized(&args.headers, &localizer)?;
     let foreign_origin = args.endpoint.contains("://") && !request::same_origin(&url, &base_url);
     let managed_auth = !request::has_header(&headers, "authorization") && !foreign_origin;
     let agent = f.agent();
@@ -264,18 +266,19 @@ pub fn run(f: &mut Factory, args: ApiArgs) -> Result<(), CliError> {
         if !managed_auth {
             return Ok(None);
         }
-        match auth::resolve_fresh(
+        match auth::resolve_fresh_localized(
             &agent,
             store.as_ref(),
             &mut config,
             args.auth.profile.as_deref(),
             err,
+            &localizer,
         )? {
             Some(resolved) => Ok(Some(resolved.authorization_header())),
-            None => Err(CliError::Flag(
-                "no credentials found. run `portone auth login` or set PORTONE_ACCESS_TOKEN"
-                    .to_string(),
-            )),
+            None => Err(CliError::Flag(crate::tr!(
+                localizer,
+                "core-credentials-missing"
+            ))),
         }
     };
 
@@ -288,9 +291,11 @@ pub fn run(f: &mut Factory, args: ApiArgs) -> Result<(), CliError> {
     let tty = f.io.stdout_is_tty;
 
     let io = &mut f.io;
-    let mut pager = Pager::start(&mut *io.out, &mut *io.err, tty, !args.silent);
+    let mut pager =
+        Pager::start_localized(&mut *io.out, &mut *io.err, tty, !args.silent, &localizer);
     let result = run_pages(
         &args,
+        &localizer,
         &agent,
         cache.as_ref(),
         &method,
@@ -315,6 +320,7 @@ pub fn run(f: &mut Factory, args: ApiArgs) -> Result<(), CliError> {
 #[allow(clippy::too_many_arguments)]
 fn run_pages(
     args: &ApiArgs,
+    localizer: &Localizer,
     agent: &ureq::Agent,
     cache: Option<&Cache>,
     method: &str,
@@ -353,7 +359,14 @@ fn run_pages(
         };
 
         if args.verbose {
-            verbose::log_request(out, method, url, &headers, body_bytes.as_deref())?;
+            verbose::log_request_localized(
+                out,
+                method,
+                url,
+                &headers,
+                body_bytes.as_deref(),
+                localizer,
+            )?;
         }
 
         let resp = fetch(
@@ -367,7 +380,7 @@ fn run_pages(
         )?;
 
         if args.verbose {
-            verbose::log_response(out, &resp)?;
+            verbose::log_response_localized(out, &resp, localizer)?;
         }
 
         if args.include && !args.verbose {
@@ -431,8 +444,11 @@ fn run_pages(
             match cursor {
                 Some(cursor) => {
                     if params.get("endCursor").and_then(Value::as_str) == Some(cursor.as_str()) {
-                        let _ =
-                            writeln!(err, "portone: pagination cursor did not advance; stopping");
+                        let _ = writeln!(
+                            err,
+                            "portone: {}",
+                            crate::tr!(localizer, "core-pagination-cursor")
+                        );
                         break;
                     }
                     params.insert("endCursor".to_string(), Value::String(cursor));
@@ -454,11 +470,12 @@ fn run_pages(
                     let Some(value) = parsed else {
                         let _ = writeln!(
                             err,
-                            "portone: cannot determine pagination scheme; stopping after first page"
+                            "portone: {}",
+                            crate::tr!(localizer, "core-pagination-unknown")
                         );
                         break;
                     };
-                    match p.advance(params, &value) {
+                    match p.advance_localized(params, &value, localizer) {
                         Advance::Next => {}
                         Advance::Done => break,
                         Advance::Stop(message) => {
@@ -514,7 +531,12 @@ fn fetch(
     Ok(resp)
 }
 
+#[cfg(test)]
 fn validate(args: &ApiArgs) -> Result<(), CliError> {
+    validate_localized(args, crate::i18n::english())
+}
+
+fn validate_localized(args: &ApiArgs, localizer: &Localizer) -> Result<(), CliError> {
     if args.paginate
         && !args.is_graphql()
         && args
@@ -522,24 +544,19 @@ fn validate(args: &ApiArgs) -> Result<(), CliError> {
             .as_deref()
             .is_some_and(|m| !m.eq_ignore_ascii_case("GET"))
     {
-        return Err(CliError::Flag(
-            "the `--paginate` option is not supported for non-GET requests".to_string(),
-        ));
+        return Err(CliError::Flag(crate::tr!(
+            localizer,
+            "core-paginate-method"
+        )));
     }
     if args.paginate && args.input.is_some() {
-        return Err(CliError::Flag(
-            "the `--paginate` option is not supported with `--input`".to_string(),
-        ));
+        return Err(CliError::Flag(crate::tr!(localizer, "core-paginate-input")));
     }
     if args.slurp && args.jq.is_some() {
-        return Err(CliError::Flag(
-            "the `--slurp` option is not supported with `--jq`".to_string(),
-        ));
+        return Err(CliError::Flag(crate::tr!(localizer, "core-slurp-jq")));
     }
     if args.slurp && !args.paginate {
-        return Err(CliError::Flag(
-            "`--paginate` required when passing `--slurp`".to_string(),
-        ));
+        return Err(CliError::Flag(crate::tr!(localizer, "core-slurp-paginate")));
     }
     if [args.jq.is_some(), args.silent, args.verbose]
         .iter()
@@ -547,14 +564,13 @@ fn validate(args: &ApiArgs) -> Result<(), CliError> {
         .count()
         > 1
     {
-        return Err(CliError::Flag(
-            "only one of `--jq`, `--silent`, or `--verbose` may be used".to_string(),
-        ));
+        return Err(CliError::Flag(crate::tr!(
+            localizer,
+            "core-output-conflict"
+        )));
     }
     if args.input.is_some() && !(args.fields.is_empty() && args.raw_fields.is_empty()) {
-        return Err(CliError::Flag(
-            "the `--input` option is not supported with `--field` or `--raw-field`".to_string(),
-        ));
+        return Err(CliError::Flag(crate::tr!(localizer, "core-input-fields")));
     }
     Ok(())
 }

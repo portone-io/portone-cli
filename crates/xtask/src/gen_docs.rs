@@ -4,10 +4,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use clap::{Arg, ArgAction, Command, CommandFactory};
+use clap::{Arg, ArgAction, Command};
 
 pub fn render_all() -> BTreeMap<String, String> {
-    let mut root = portone_cli::cmd::Cli::command();
+    let mut root = portone_cli::cmd::help::command(&portone_cli::i18n::Localizer::english());
     root.build();
     let mut pages = BTreeMap::new();
     walk(&mut root, vec!["portone".to_string()], &mut pages);

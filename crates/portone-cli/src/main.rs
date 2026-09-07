@@ -1,14 +1,15 @@
 use std::io::Write;
 
-use clap::Parser;
+use clap::FromArgMatches;
 
 use portone_cli::cmd;
 use portone_cli::error::CliError;
 use portone_cli::factory::Factory;
 
 fn main() {
-    let cli = cmd::Cli::parse();
     let mut f = Factory::detect();
+    let matches = cmd::help::command(&f.localizer).get_matches();
+    let cli = cmd::Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
 
     let code = match cmd::run(&mut f, cli.command) {
         Ok(()) => 0,
@@ -21,7 +22,7 @@ fn main() {
             if is_broken_pipe(&err) {
                 0
             } else {
-                let _ = writeln!(f.io.err, "portone: {err:#}");
+                let _ = writeln!(f.io.err, "portone: {}", f.localizer.format_error(&err));
                 1
             }
         }

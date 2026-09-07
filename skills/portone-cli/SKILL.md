@@ -11,6 +11,10 @@ never prompt, and non-TTY output disables color and paging automatically.
 
 ## Non-interactive behavior
 
+- Set `PORTONE_LANG=en` in the environment of agent-invoked `portone` processes
+  unless the user requests another CLI language. Preserve the user's saved
+  language preference and respond in the user's language. Use exit codes and
+  structured output for automation; diagnostic wording is not a stable API.
 - Do not look for a `--no-pager` flag; it does not exist and is unnecessary.
 - Set `CLICOLOR_FORCE=1` to force color or `NO_COLOR=1` to disable it.
 - `portone setup` requires `--assistant claude|codex|both` when no TTY is

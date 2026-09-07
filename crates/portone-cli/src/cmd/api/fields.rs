@@ -1,6 +1,7 @@
 use std::io::Read;
 
-use anyhow::{Result, anyhow, bail};
+use crate::i18n::LocalizedContext;
+use anyhow::{Result, bail};
 use serde_json::{Map, Value};
 
 pub fn parse_fields(
@@ -48,14 +49,17 @@ fn parse_field(
     }
 
     if keystack.is_empty() {
-        bail!("invalid key: {f:?}");
+        bail!(crate::message!(
+            "core-field-invalid",
+            key = format!("{f:?}")
+        ));
     }
 
     let key;
     let raw_value: Option<&str>;
     if value_index == 0 {
         if !keystack.last().unwrap().is_empty() {
-            bail!("field {f:?} requires a value separated by an '=' sign");
+            bail!(crate::message!("core-field-value", key = format!("{f:?}")));
         }
         key = f;
         raw_value = None;
@@ -67,7 +71,7 @@ fn parse_field(
     let value: Option<Value> = match raw_value {
         None => None,
         Some(s) if is_magic => match magic_field_value(s, stdin)
-            .map_err(|err| anyhow!("error parsing {key:?} value: {err}"))?
+            .with_lcontext(|| crate::message!("core-field-parse", key = format!("{key:?}")))?
         {
             Value::Null => None,
             v => Some(v),
@@ -102,10 +106,11 @@ fn parse_field(
             Some(v) => match dest_map.get_mut(subkey) {
                 Some(Value::Array(arr)) => arr.push(v),
                 Some(existing) => {
-                    bail!(
-                        "expected array type under {subkey:?}, got {}",
-                        go_type_name(existing)
-                    );
+                    bail!(crate::message!(
+                        "core-field-array",
+                        key = format!("{subkey:?}"),
+                        actual = go_type_name(existing)
+                    ));
                 }
                 None => {
                     dest_map.insert(subkey.to_string(), Value::Array(vec![v]));
@@ -114,7 +119,10 @@ fn parse_field(
         }
     } else {
         if dest_map.contains_key(subkey) {
-            bail!("unexpected override existing field under {subkey:?}");
+            bail!(crate::message!(
+                "core-field-override",
+                key = format!("{subkey:?}")
+            ));
         }
         dest_map.insert(subkey.to_string(), value.unwrap_or(Value::Null));
     }
@@ -130,10 +138,11 @@ fn add_params_map<'a>(
     }
     match m.get_mut(key).unwrap() {
         Value::Object(map) => Ok(map),
-        other => bail!(
-            "expected map type under {key:?}, got {}",
-            go_type_name(other)
-        ),
+        other => bail!(crate::message!(
+            "core-field-map",
+            key = format!("{key:?}"),
+            actual = go_type_name(other)
+        )),
     }
 }
 
@@ -162,10 +171,11 @@ fn add_params_slice<'a>(
                 _ => unreachable!(),
             }
         }
-        other => bail!(
-            "expected array type under {prevkey:?}, got {}",
-            go_type_name(other)
-        ),
+        other => bail!(crate::message!(
+            "core-field-array",
+            key = format!("{prevkey:?}"),
+            actual = go_type_name(other)
+        )),
     }
 }
 
@@ -191,10 +201,10 @@ fn read_user_file(path: &str, stdin: &mut dyn Read) -> Result<String> {
         let mut buf = Vec::new();
         stdin
             .read_to_end(&mut buf)
-            .map_err(|e| anyhow::anyhow!("open -: {e}"))?;
+            .lcontext(crate::message!("core-field-open", path = "-"))?;
         buf
     } else {
-        std::fs::read(path).map_err(|e| anyhow::anyhow!("open {path}: {e}"))?
+        std::fs::read(path).with_lcontext(|| crate::message!("core-field-open", path = path))?
     };
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }

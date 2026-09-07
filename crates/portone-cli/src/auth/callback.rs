@@ -3,8 +3,10 @@ use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{anyhow, bail};
 use url::Url;
+
+use crate::i18n::{LocalizedContext, LocalizedErrorContext, Localizer};
 
 const REQUEST_LINE_LIMIT: usize = 8 * 1024;
 const HEADER_LIMIT: usize = 64 * 1024;
@@ -31,18 +33,22 @@ impl CallbackServer {
     pub fn bind(redirect_uri: &Url) -> anyhow::Result<Self> {
         let host = redirect_uri.host_str().unwrap_or_default();
         if !matches!(host, "127.0.0.1" | "localhost") {
-            bail!("redirect URI host must be 127.0.0.1 or localhost: {redirect_uri}");
+            bail!(crate::message!(
+                "auth-callback-invalid-host",
+                uri = redirect_uri
+            ));
         }
-        let port = redirect_uri
-            .port()
-            .with_context(|| format!("redirect URI is missing a port: {redirect_uri}"))?;
+        let port = redirect_uri.port().ok_or_else(|| {
+            anyhow!(crate::message!(
+                "auth-callback-missing-port",
+                uri = redirect_uri
+            ))
+        })?;
         let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|err| {
             if err.kind() == std::io::ErrorKind::AddrInUse {
-                anyhow!(
-                    "port {port} is already in use; stop any other portone login or MCP server using it, then try again"
-                )
+                anyhow!(crate::message!("auth-callback-port-in-use", port = port))
             } else {
-                anyhow!("failed to start callback server on 127.0.0.1:{port}: {err}")
+                anyhow!(err).lcontext(crate::message!("auth-callback-start-failed", port = port))
             }
         })?;
         listener.set_nonblocking(true)?;
@@ -59,24 +65,34 @@ impl CallbackServer {
         timeout: Duration,
         err: &mut dyn Write,
     ) -> anyhow::Result<Callback> {
+        self.wait_localized(expected_state, timeout, err, &Localizer::english())
+    }
+
+    pub fn wait_localized(
+        &self,
+        expected_state: &str,
+        timeout: Duration,
+        err: &mut dyn Write,
+        localizer: &Localizer,
+    ) -> anyhow::Result<Callback> {
         let deadline = Instant::now() + timeout;
         loop {
             match self.listener.accept() {
                 Ok((stream, _)) => {
-                    if let Some(callback) = self.handle(stream, expected_state, err) {
+                    if let Some(callback) = self.handle(stream, expected_state, err, localizer) {
                         return Ok(callback);
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     if Instant::now() >= deadline {
-                        bail!(
-                            "timed out after waiting {} minutes for console login",
-                            timeout.as_secs().div_ceil(60)
-                        );
+                        bail!(crate::message!(
+                            "auth-callback-timeout",
+                            minutes = timeout.as_secs().div_ceil(60)
+                        ));
                     }
                     std::thread::sleep(POLL_INTERVAL);
                 }
-                Err(e) => return Err(e).context("failed to accept callback connection"),
+                Err(e) => return Err(e).lcontext(crate::message!("auth-callback-accept-failed")),
             }
         }
     }
@@ -86,6 +102,7 @@ impl CallbackServer {
         mut stream: TcpStream,
         expected_state: &str,
         err: &mut dyn Write,
+        localizer: &Localizer,
     ) -> Option<Callback> {
         let _ = stream.set_nonblocking(false);
         let _ = stream.set_read_timeout(Some(CONNECTION_TIMEOUT));
@@ -98,7 +115,11 @@ impl CallbackServer {
                     &mut stream,
                     400,
                     "Bad Request",
-                    &page("Invalid request", ""),
+                    &page(
+                        localizer,
+                        &crate::tr!(localizer, "auth-callback-invalid-request"),
+                        "",
+                    ),
                 );
                 return None;
             }
@@ -108,7 +129,11 @@ impl CallbackServer {
                 &mut stream,
                 400,
                 "Bad Request",
-                &page("Invalid request", ""),
+                &page(
+                    localizer,
+                    &crate::tr!(localizer, "auth-callback-invalid-request"),
+                    "",
+                ),
             );
             return None;
         };
@@ -117,7 +142,11 @@ impl CallbackServer {
                 &mut stream,
                 405,
                 "Method Not Allowed",
-                &page("Request not allowed", ""),
+                &page(
+                    localizer,
+                    &crate::tr!(localizer, "auth-callback-method-not-allowed"),
+                    "",
+                ),
             );
             return None;
         }
@@ -126,12 +155,25 @@ impl CallbackServer {
                 &mut stream,
                 400,
                 "Bad Request",
-                &page("Invalid request", ""),
+                &page(
+                    localizer,
+                    &crate::tr!(localizer, "auth-callback-invalid-request"),
+                    "",
+                ),
             );
             return None;
         };
         if url.path() != self.path {
-            respond(&mut stream, 404, "Not Found", &page("Not found", ""));
+            respond(
+                &mut stream,
+                404,
+                "Not Found",
+                &page(
+                    localizer,
+                    &crate::tr!(localizer, "auth-callback-not-found"),
+                    "",
+                ),
+            );
             return None;
         }
         let params: HashMap<String, String> = url.query_pairs().into_owned().collect();
@@ -141,11 +183,16 @@ impl CallbackServer {
                 400,
                 "Bad Request",
                 &page(
-                    "Unable to verify login request",
-                    "The state value does not match. Restart login from the terminal.",
+                    localizer,
+                    &crate::tr!(localizer, "auth-callback-unverified-request"),
+                    &crate::tr!(localizer, "auth-callback-state-mismatch-detail"),
                 ),
             );
-            let _ = writeln!(err, "portone: ignored callback with mismatched state");
+            let _ = writeln!(
+                err,
+                "{}",
+                crate::tr!(localizer, "auth-callback-state-mismatch")
+            );
             return None;
         }
         if let Some(error) = params.get("error") {
@@ -158,8 +205,9 @@ impl CallbackServer {
                 400,
                 "Bad Request",
                 &page(
-                    "Login denied",
-                    "Close this window and follow the instructions in your terminal.",
+                    localizer,
+                    &crate::tr!(localizer, "auth-callback-denied-title"),
+                    &crate::tr!(localizer, "auth-callback-denied-detail"),
                 ),
             );
             return Some(Callback::Denied {
@@ -174,8 +222,9 @@ impl CallbackServer {
                     200,
                     "OK",
                     &page(
-                        "Login complete",
-                        "Close this window and return to your terminal.",
+                        localizer,
+                        &crate::tr!(localizer, "auth-callback-complete-title"),
+                        &crate::tr!(localizer, "auth-callback-complete-detail"),
                     ),
                 );
                 Some(Callback::Code(code.clone()))
@@ -186,8 +235,9 @@ impl CallbackServer {
                     400,
                     "Bad Request",
                     &page(
-                        "Unable to verify login request",
-                        "The code value is missing.",
+                        localizer,
+                        &crate::tr!(localizer, "auth-callback-unverified-request"),
+                        &crate::tr!(localizer, "auth-callback-missing-code"),
                     ),
                 );
                 None
@@ -204,11 +254,11 @@ fn read_request_line(stream: &mut TcpStream) -> anyhow::Result<String> {
             break pos;
         }
         if buf.len() >= REQUEST_LINE_LIMIT {
-            bail!("request line too long");
+            bail!(crate::message!("auth-callback-request-line-too-long"));
         }
         let n = stream.read(&mut chunk)?;
         if n == 0 {
-            bail!("connection closed before request line");
+            bail!(crate::message!("auth-callback-connection-closed"));
         }
         buf.extend_from_slice(&chunk[..n]);
     };
@@ -246,9 +296,10 @@ fn respond(stream: &mut TcpStream, status: u16, reason: &str, html: &str) {
     let _ = stream.shutdown(Shutdown::Both);
 }
 
-fn page(title: &str, detail: &str) -> String {
+fn page(localizer: &Localizer, title: &str, detail: &str) -> String {
+    let lang = localizer.lang();
     format!(
-        "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><title>{title} - PortOne CLI</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:80px auto;padding:0 24px;color:#222}}h1{{font-size:20px}}p{{color:#555}}</style></head><body><h1>{title}</h1><p>{detail}</p></body></html>"
+        "<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\"><title>{title} - PortOne CLI</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:80px auto;padding:0 24px;color:#222}}h1{{font-size:20px}}p{{color:#555}}</style></head><body><h1>{title}</h1><p>{detail}</p></body></html>"
     )
 }
 
@@ -402,5 +453,53 @@ mod tests {
         drop(idle);
         let (result, _) = handle.join().unwrap();
         assert_eq!(result.unwrap(), Callback::Code("late".to_string()));
+    }
+
+    #[test]
+    fn korean_callback_localizes_page_and_keeps_protocol_values() {
+        let s = server("/oauth/cli");
+        let port = s.port;
+        let handle = std::thread::spawn(move || {
+            s.wait_localized(
+                "st",
+                Duration::from_secs(5),
+                &mut Vec::new(),
+                &Localizer::korean(),
+            )
+        });
+        let (status, body) = send(
+            port,
+            "GET /oauth/cli?error=access_denied&error_description=Unchanged+server+detail&state=st HTTP/1.1\r\n\r\n",
+        );
+        assert_eq!(status, 400);
+        assert!(body.contains("lang=\"ko\""), "{body}");
+        assert!(body.contains("로그인이 거부되었습니다"), "{body}");
+        assert_eq!(
+            handle.join().unwrap().unwrap(),
+            Callback::Denied {
+                error: "access_denied".to_string(),
+                description: Some("Unchanged server detail".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn callback_pages_follow_their_own_language_context() {
+        let english = Localizer::english();
+        let korean = Localizer::korean();
+        let render = |localizer: &Localizer| {
+            page(
+                localizer,
+                &crate::tr!(localizer, "auth-callback-complete-title"),
+                &crate::tr!(localizer, "auth-callback-complete-detail"),
+            )
+        };
+        let en_page = render(&english);
+        let ko_page = render(&korean);
+        assert!(en_page.contains("lang=\"en\""));
+        assert!(en_page.contains("Login complete"));
+        assert!(ko_page.contains("lang=\"ko\""));
+        assert!(ko_page.contains("로그인 완료"));
+        assert_eq!(render(&english), en_page);
     }
 }

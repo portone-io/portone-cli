@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::Context;
+use crate::i18n::LocalizedContext;
 
 use super::assistants::Assistant;
 
@@ -35,14 +35,18 @@ impl CommandRunner for ShellRunner {
         let output = shell_command(cmd)
             .current_dir(cwd)
             .output()
-            .with_context(|| format!("failed to run command: {cmd}"))?;
+            .with_lcontext(|| crate::message!("setup-command-run-failed", command = cmd))?;
         let combined = format!(
             "{}{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
         if !output.status.success() {
-            anyhow::bail!("command failed: {cmd}\n{}", combined.trim_end());
+            anyhow::bail!(crate::message!(
+                "setup-command-output-failed",
+                command = cmd,
+                output = combined.trim_end()
+            ));
         }
         Ok(combined)
     }
@@ -51,12 +55,13 @@ impl CommandRunner for ShellRunner {
         let output = shell_command(cmd)
             .current_dir(cwd)
             .output()
-            .with_context(|| format!("failed to run command: {cmd}"))?;
+            .with_lcontext(|| crate::message!("setup-command-run-failed", command = cmd))?;
         if !output.status.success() {
-            anyhow::bail!(
-                "command failed: {cmd}\n{}",
-                String::from_utf8_lossy(&output.stderr).trim_end()
-            );
+            anyhow::bail!(crate::message!(
+                "setup-command-output-failed",
+                command = cmd,
+                output = String::from_utf8_lossy(&output.stderr).trim_end()
+            ));
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
@@ -65,9 +70,9 @@ impl CommandRunner for ShellRunner {
         let status = shell_command(cmd)
             .current_dir(cwd)
             .status()
-            .with_context(|| format!("failed to run command: {cmd}"))?;
+            .with_lcontext(|| crate::message!("setup-command-run-failed", command = cmd))?;
         if !status.success() {
-            anyhow::bail!("command failed: {cmd}");
+            anyhow::bail!(crate::message!("setup-command-failed", command = cmd));
         }
         Ok(())
     }
@@ -171,6 +176,28 @@ mod tests {
 
     use super::testing::MockRunner;
     use super::*;
+    use crate::i18n::Localizer;
+
+    #[test]
+    fn failed_shell_commands_localize_diagnostic_and_preserve_external_output() {
+        let runner = ShellRunner;
+        let command = "echo external diagnostic 1>&2 && exit 1";
+        for error in [
+            runner.run_capture(command, Path::new(".")).unwrap_err(),
+            runner
+                .run_capture_stdout(command, Path::new("."))
+                .unwrap_err(),
+        ] {
+            assert_eq!(
+                Localizer::english().format_error(&error),
+                format!("command failed: {command}\nexternal diagnostic")
+            );
+            assert_eq!(
+                Localizer::korean().format_error(&error),
+                format!("명령 실패: {command}\nexternal diagnostic")
+            );
+        }
+    }
 
     #[test]
     fn git_clean_when_no_output() {

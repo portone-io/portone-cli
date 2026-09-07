@@ -5,11 +5,12 @@ pub mod store;
 
 use std::io::Write;
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use serde_json::Value;
 
 use crate::config::{Config, DEFAULT_BASE_URL, OAuthProfile, OAuthTokens, Storage};
 use crate::error::CliError;
+use crate::i18n::{LocalizedContext, LocalizedErrorContext, Localizer};
 use oauth::{OAuthIssuer, TokenError};
 use store::{KEYRING_SERVICE, SecretStore};
 
@@ -111,9 +112,12 @@ pub fn load_tokens(
                 return Ok(None);
             };
             store.load(&id).map_err(|err| {
-                anyhow!(
-                    "failed to read tokens for profile '{profile}' from the keyring ({KEYRING_SERVICE}/{id}): {err}"
-                )
+                err.into_anyhow().lcontext(crate::message!(
+                    "auth-keyring-load-failed",
+                    profile = profile,
+                    service = KEYRING_SERVICE,
+                    id = id
+                ))
             })
         }
     }
@@ -125,6 +129,17 @@ pub fn resolve_fresh(
     config: &mut Config,
     profile: Option<&str>,
     err: &mut dyn Write,
+) -> Result<Option<ResolvedAuth>, CliError> {
+    resolve_fresh_localized(agent, store, config, profile, err, &Localizer::english())
+}
+
+pub fn resolve_fresh_localized(
+    agent: &ureq::Agent,
+    store: &dyn SecretStore,
+    config: &mut Config,
+    profile: Option<&str>,
+    err: &mut dyn Write,
+    localizer: &Localizer,
 ) -> Result<Option<ResolvedAuth>, CliError> {
     let Some(mut resolved) = resolve(store, profile, config)? else {
         return Ok(None);
@@ -162,27 +177,42 @@ pub fn resolve_fresh(
     }
 
     let Some(refresh_token) = normalize(session.tokens.refresh_token.as_deref()) else {
-        return Err(CliError::Flag(SESSION_EXPIRED.to_string()));
+        return Err(CliError::Flag(crate::tr!(
+            localizer,
+            "auth-session-expired"
+        )));
     };
     match oauth::refresh(agent, &session.issuer(), &refresh_token) {
         Ok(tokens) => {
-            persist_refreshed(store, config, &mut session, &tokens, err)?;
+            persist_refreshed(store, config, &mut session, &tokens, err, localizer)?;
             session.tokens = tokens;
             Ok(Some(finish(resolved, session)))
         }
-        Err(TokenError::InvalidGrant(_)) => Err(CliError::Flag(SESSION_EXPIRED.to_string())),
+        Err(TokenError::InvalidGrant(_)) => Err(CliError::Flag(crate::tr!(
+            localizer,
+            "auth-session-expired"
+        ))),
         Err(TokenError::Rejected { error, detail }) => Err(CliError::Other(anyhow!(
-            "token refresh was rejected ({error}): {detail}"
+            crate::message!("auth-refresh-rejected", error = error, detail = detail)
         ))),
         Err(error) => {
             if oauth::is_valid(&session.tokens, now) {
                 let _ = writeln!(
                     err,
-                    "portone: token refresh failed; continuing with the current token: {error}"
+                    "{}",
+                    crate::tr!(
+                        localizer,
+                        "auth-refresh-failed-continuing",
+                        error = error.localized(localizer)
+                    )
                 );
                 Ok(Some(finish(resolved, session)))
             } else {
-                Err(CliError::Other(anyhow!("token refresh failed: {error}")))
+                Err(CliError::Other(
+                    error
+                        .into_anyhow()
+                        .lcontext(crate::message!("auth-refresh-failed")),
+                ))
             }
         }
     }
@@ -206,6 +236,7 @@ fn persist_refreshed(
     session: &mut OAuthSession,
     tokens: &OAuthTokens,
     err: &mut dyn Write,
+    localizer: &Localizer,
 ) -> Result<(), CliError> {
     if session.oauth.storage == Storage::Keyring
         && let Some(id) = normalize(session.oauth.credential_id.as_deref())
@@ -215,7 +246,12 @@ fn persist_refreshed(
             Err(error) => {
                 let _ = writeln!(
                     err,
-                    "portone: failed to save refreshed tokens to the keyring; storing them in the config file: {error}"
+                    "{}",
+                    crate::tr!(
+                        localizer,
+                        "auth-refreshed-keyring-fallback",
+                        error = error.localized(localizer)
+                    )
                 );
             }
         }
@@ -238,9 +274,7 @@ fn persist_refreshed(
 }
 
 fn save_error(err: anyhow::Error) -> CliError {
-    CliError::Other(anyhow!(
-        "failed to save refreshed tokens: {err:#}; you may need to authenticate again on the next run"
-    ))
+    CliError::Other(err.lcontext(crate::message!("auth-refreshed-save-failed")))
 }
 
 pub fn resolve_base_url(flag: Option<&str>, profile: Option<&str>, config: &Config) -> String {
@@ -296,14 +330,14 @@ pub fn verify_bearer(
         .send_json(serde_json::json!({
             "query": "query { merchant { __typename ... on Merchant { plainId } } }"
         }))
-        .context("console token validation request failed")?;
+        .lcontext(crate::message!("auth-validation-request-failed"))?;
     if !(200..300).contains(&response.status().as_u16()) {
         return Ok(None);
     }
     let value: Value = response
         .body_mut()
         .read_json()
-        .context("failed to parse console token validation response")?;
+        .lcontext(crate::message!("auth-validation-parse-failed"))?;
     let merchant = value.pointer("/data/merchant");
     let is_merchant = merchant
         .and_then(|m| m.get("__typename"))
@@ -454,7 +488,7 @@ mod tests {
 
             let broken = MemoryStore::default();
             *broken.fail_load.borrow_mut() = Some(StoreError::Timeout);
-            let err = resolve(&broken, None, &keyring).unwrap_err().to_string();
+            let err = format!("{:#}", resolve(&broken, None, &keyring).unwrap_err());
             assert!(err.contains("portone-cli/cred-1"), "{err}");
             assert!(err.contains("30 seconds"), "{err}");
         });
@@ -662,6 +696,7 @@ mod tests {
                         &mut session,
                         &tokens(name, oauth::now() + 3600),
                         &mut Vec::new(),
+                        &Localizer::english(),
                     );
                     done.send(()).unwrap();
                     result.unwrap();
@@ -961,5 +996,28 @@ mod tests {
             verify_bearer(&agent, &server.base_url(), "rejected").unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn nested_keyring_errors_are_localized_at_the_output_boundary() {
+        without_auth_env(|| {
+            let config = oauth_config(Storage::Keyring, "u", None);
+            let store = MemoryStore::default();
+            *store.fail_load.borrow_mut() = Some(StoreError::Timeout);
+            let error = resolve(&store, None, &config).unwrap_err();
+            let english = Localizer::english().format_error(&error);
+            let korean = Localizer::korean().format_error(&error);
+            assert!(english.contains("failed to read tokens"), "{english}");
+            assert!(
+                english.contains("keyring did not respond within 30 seconds"),
+                "{english}"
+            );
+            assert!(korean.contains("토큰을 읽지 못했습니다"), "{korean}");
+            assert!(
+                korean.contains("키링이 30초 이내에 응답하지 않았습니다"),
+                "{korean}"
+            );
+            assert!(korean.contains("portone-cli/cred-1"), "{korean}");
+        });
     }
 }

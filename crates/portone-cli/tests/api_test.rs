@@ -10,6 +10,7 @@ fn portone(config_dir: &std::path::Path, cache_dir: &std::path::Path) -> Command
         .env_remove("CLICOLOR_FORCE")
         .env_remove("PORTONE_PAGER")
         .env_remove("PAGER")
+        .env("PORTONE_LANG", "en")
         .env("NO_COLOR", "1")
         .env("PORTONE_CONFIG_DIR", config_dir)
         .env("PORTONE_CACHE_DIR", cache_dir);
@@ -823,6 +824,7 @@ fn api_concurrent_calls_refresh_once() {
             std::process::Command::new(env!("CARGO_BIN_EXE_portone"))
                 .env_remove("PORTONE_ACCESS_TOKEN")
                 .env_remove("PORTONE_API_BASE")
+                .env("PORTONE_LANG", "en")
                 .env("NO_COLOR", "1")
                 .env("PORTONE_CONFIG_DIR", h.config.path())
                 .env("PORTONE_CACHE_DIR", h.cache.path())

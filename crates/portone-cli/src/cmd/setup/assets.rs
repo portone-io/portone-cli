@@ -1,17 +1,18 @@
 use std::path::Path;
 
-use anyhow::Context;
+use crate::i18n::LocalizedContext;
 use include_dir::{Dir, include_dir};
 
 static PORTONE_CODEX_PLUGIN: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../../plugins/portone-codex");
 
 pub fn extract(target_dir: &Path) -> anyhow::Result<()> {
-    std::fs::create_dir_all(target_dir)
-        .with_context(|| format!("failed to create directory: {}", target_dir.display()))?;
-    PORTONE_CODEX_PLUGIN
-        .extract(target_dir)
-        .with_context(|| format!("failed to extract plugin assets: {}", target_dir.display()))?;
+    std::fs::create_dir_all(target_dir).with_lcontext(|| {
+        crate::message!("setup-create-directory-failed", path = target_dir.display())
+    })?;
+    PORTONE_CODEX_PLUGIN.extract(target_dir).with_lcontext(|| {
+        crate::message!("setup-extract-assets-failed", path = target_dir.display())
+    })?;
     Ok(())
 }
 

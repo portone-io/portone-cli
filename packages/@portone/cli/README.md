@@ -19,6 +19,45 @@ npm install --global @portone/cli
 
 Node.js 20 or later is required.
 
+## Display language
+
+The CLI includes English and Korean translations. It detects your language
+automatically and falls back to English when no supported language is found.
+Set `PORTONE_LANG` for one process, or the top-level `language` setting in
+`config.toml` to save a preference:
+
+```bash
+PORTONE_LANG=en portone auth status
+PORTONE_LANG=ko portone --help
+```
+
+```toml
+language = "ko" # en, ko, or auto (the default)
+```
+
+`PORTONE_LANG` takes precedence over the saved preference. Setting it to `auto`
+bypasses the saved preference. Empty values are treated as unset; unsupported
+values fall back to English. Regional locales such as `ko-KR` and
+`ko_KR.UTF-8` are also recognized.
+
+After explicit PortOne language settings, automatic detection uses the operating
+system's preferred languages. On macOS and Windows, these come from the OS UI
+language preferences. On Linux, language candidates are collected from
+`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, and `LANG`, in that order. `LANGUAGE` accepts
+a colon-separated preference list. The first supported language is selected,
+with English as the fallback. Use `PORTONE_LANG=en` to force English on any
+platform.
+
+Help, prompts, authentication status, and CLI diagnostics use the selected
+language. Command names, flags, API responses, tokens, timestamps, and external
+error details are unchanged. Argument-parsing diagnostics from clap remain in
+English. Generated completion scripts and reference documentation use English
+regardless of the selected language.
+
+For agent or CI invocations, set `PORTONE_LANG=en` for consistent diagnostics
+without changing the user's saved preference. On PowerShell, set the process
+environment with `$env:PORTONE_LANG = 'en'` before invoking the CLI.
+
 ## `portone setup`
 
 Install the PortOne plugins for Claude Code, Codex, or both:

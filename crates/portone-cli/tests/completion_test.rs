@@ -2,7 +2,9 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn portone() -> Command {
-    Command::cargo_bin("portone").expect("portone binary not found")
+    let mut command = Command::cargo_bin("portone").expect("portone binary not found");
+    command.env("PORTONE_LANG", "en");
+    command
 }
 
 #[test]

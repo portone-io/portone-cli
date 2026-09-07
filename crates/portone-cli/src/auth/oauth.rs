@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use base64::Engine;
 use base64::engine::general_purpose::{URL_SAFE_NO_PAD, URL_SAFE_NO_PAD_INDIFFERENT};
 use serde_json::{Value, json};
@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use url::Url;
 
 use crate::config::OAuthTokens;
+use crate::i18n::{LocalizedContext, LocalizedErrorContext, Localizer};
 
 pub const CONSOLE_URL: &str = "https://admin.portone.io";
 pub const MERCHANT_SERVICE_URL: &str = "https://merchant-service.prod.iamport.co";
@@ -47,8 +48,8 @@ impl OAuthConfig {
             base_url_from_env("PORTONE_MERCHANT_SERVICE_URL", MERCHANT_SERVICE_URL)?;
         let client_id = env_or("PORTONE_OAUTH_CLIENT_ID", CLIENT_ID);
         let redirect = env_or("PORTONE_OAUTH_REDIRECT_URI", REDIRECT_URI);
-        let redirect_uri =
-            Url::parse(&redirect).with_context(|| format!("invalid redirect URI: {redirect}"))?;
+        let redirect_uri = Url::parse(&redirect)
+            .with_lcontext(|| crate::message!("auth-invalid-redirect-uri", uri = redirect))?;
         let scopes = match scopes {
             Some(scopes) if !scopes.is_empty() => scopes,
             _ => DEFAULT_SCOPES.iter().map(|s| s.to_string()).collect(),
@@ -85,9 +86,14 @@ fn env_or(name: &str, default: &str) -> String {
 
 fn base_url_from_env(name: &str, default: &str) -> anyhow::Result<String> {
     let value = env_or(name, default);
-    let parsed = Url::parse(&value).with_context(|| format!("{name} is not a URL: {value}"))?;
+    let parsed = Url::parse(&value)
+        .with_lcontext(|| crate::message!("auth-invalid-env-url", name = name, value = value))?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        anyhow::bail!("{name} must be an HTTP or HTTPS URL: {value}");
+        anyhow::bail!(crate::message!(
+            "auth-invalid-env-url-scheme",
+            name = name,
+            value = value
+        ));
     }
     Ok(value.trim_end_matches('/').to_string())
 }
@@ -118,7 +124,7 @@ pub fn generate_state() -> anyhow::Result<String> {
 pub fn random_base64url(len: usize) -> anyhow::Result<String> {
     let mut buf = vec![0u8; len];
     getrandom::getrandom(&mut buf)
-        .map_err(|err| anyhow!("failed to generate random bytes: {err}"))?;
+        .map_err(|err| anyhow!(crate::message!("auth-random-failed", error = err)))?;
     Ok(URL_SAFE_NO_PAD.encode(buf))
 }
 
@@ -157,6 +163,22 @@ impl fmt::Display for TokenError {
 }
 
 impl std::error::Error for TokenError {}
+
+impl TokenError {
+    pub fn localized(&self, localizer: &Localizer) -> String {
+        match self {
+            Self::Transient(error) | Self::Malformed(error) => localizer.format_error(error),
+            _ => self.to_string(),
+        }
+    }
+
+    pub fn into_anyhow(self) -> anyhow::Error {
+        match self {
+            Self::Transient(error) | Self::Malformed(error) => error,
+            other => anyhow!(other),
+        }
+    }
+}
 
 pub fn exchange_code(
     agent: &ureq::Agent,
@@ -206,12 +228,15 @@ fn token_request(
         .timeout_global(Some(TOKEN_TIMEOUT))
         .build()
         .send_json(body)
-        .map_err(|err| TokenError::Transient(anyhow!("token request failed: {err}")))?;
+        .map_err(|err| {
+            TokenError::Transient(
+                anyhow!(err).lcontext(crate::message!("auth-token-request-failed")),
+            )
+        })?;
     let status = response.status().as_u16();
-    let bytes = response
-        .body_mut()
-        .read_to_vec()
-        .map_err(|err| TokenError::Transient(anyhow!("failed to read token response: {err}")))?;
+    let bytes = response.body_mut().read_to_vec().map_err(|err| {
+        TokenError::Transient(anyhow!(err).lcontext(crate::message!("auth-token-read-failed")))
+    })?;
     classify_response(status, &bytes, now(), previous_refresh)
 }
 
@@ -253,18 +278,23 @@ fn parse_token_response(
     now: u64,
     previous_refresh: Option<&str>,
 ) -> Result<OAuthTokens, TokenError> {
-    let value: Value = serde_json::from_slice(body)
-        .map_err(|err| TokenError::Malformed(anyhow!("failed to parse token response: {err}")))?;
+    let value: Value = serde_json::from_slice(body).map_err(|err| {
+        TokenError::Malformed(anyhow!(err).lcontext(crate::message!("auth-token-parse-failed")))
+    })?;
     let access_token = value
         .get("access_token")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| TokenError::Malformed(anyhow!("token response is missing access_token")))?
+        .ok_or_else(|| {
+            TokenError::Malformed(anyhow!(crate::message!("auth-token-missing-access-token")))
+        })?
         .to_string();
     let expires_in = value
         .get("expires_in")
         .and_then(Value::as_u64)
-        .ok_or_else(|| TokenError::Malformed(anyhow!("token response is missing expires_in")))?;
+        .ok_or_else(|| {
+            TokenError::Malformed(anyhow!(crate::message!("auth-token-missing-expires-in")))
+        })?;
     let scope = match value.get("scope") {
         Some(Value::Array(items)) => items
             .iter()
@@ -520,5 +550,26 @@ mod tests {
         let granted = vec!["B".to_string()];
         assert_eq!(missing_scopes(&requested, &granted), vec!["A".to_string()]);
         assert!(missing_scopes(&requested, &requested).is_empty());
+    }
+
+    #[test]
+    fn token_errors_localize_owned_context_and_keep_server_details() {
+        let korean = Localizer::korean();
+        let malformed = classify_response(200, b"{}", 1, None).unwrap_err();
+        assert_eq!(
+            malformed.localized(&korean),
+            "토큰 응답에 access_token이 없습니다"
+        );
+        let rejected = classify_response(
+            400,
+            br#"{"error":"invalid_client","detail":"Invalid client_id"}"#,
+            1,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(
+            rejected.localized(&korean),
+            "invalid_client: Invalid client_id"
+        );
     }
 }

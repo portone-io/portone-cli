@@ -6,6 +6,7 @@ use clap::Args;
 use crate::auth::{self, store::KEYRING_SERVICE};
 use crate::error::CliError;
 use crate::factory::Factory;
+use crate::i18n::LocalizedErrorContext;
 
 #[derive(Debug, Args)]
 pub struct LogoutArgs {
@@ -14,10 +15,12 @@ pub struct LogoutArgs {
 }
 
 pub fn run(f: &mut Factory, args: LogoutArgs) -> Result<(), CliError> {
+    let localizer = f.localizer.clone();
     if let Some(name) = auth::active_env_credential() {
         let _ = writeln!(
             f.io.err,
-            "portone: the {name} environment variable is being used for authentication; unset it before removing stored credentials"
+            "{}",
+            crate::tr!(localizer, "auth-logout-env-active", name = name)
         );
         return Err(CliError::Silent);
     }
@@ -27,15 +30,20 @@ pub fn run(f: &mut Factory, args: LogoutArgs) -> Result<(), CliError> {
         .or_else(|| config.default_profile.clone())
         .unwrap_or_else(|| "default".to_string());
     let Some(profile) = config.profiles.get(&name) else {
-        return Err(CliError::Other(anyhow!("profile '{name}' does not exist")));
+        return Err(CliError::Other(anyhow!(crate::message!(
+            "auth-profile-not-found",
+            profile = name
+        ))));
     };
     if let Some(oauth) = &profile.oauth
         && let Some(id) = auth::normalize(oauth.credential_id.as_deref())
     {
         f.secret_store().delete(&id).map_err(|err| {
-            CliError::Other(anyhow!(
-                "failed to delete tokens from the keyring ({KEYRING_SERVICE}/{id}): {err}"
-            ))
+            CliError::Other(err.into_anyhow().lcontext(crate::message!(
+                "auth-logout-keyring-delete-failed",
+                service = KEYRING_SERVICE,
+                id = id
+            )))
         })?;
     }
     config.profiles.remove(&name);
@@ -43,7 +51,11 @@ pub fn run(f: &mut Factory, args: LogoutArgs) -> Result<(), CliError> {
         config.default_profile = None;
     }
     config.save()?;
-    let _ = writeln!(f.io.err, "Removed profile '{name}'.");
+    let _ = writeln!(
+        f.io.err,
+        "{}",
+        crate::tr!(localizer, "auth-logout-removed", profile = name)
+    );
     Ok(())
 }
 

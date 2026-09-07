@@ -21,6 +21,14 @@ pub fn config_dir() -> PathBuf {
         .unwrap_or_else(|| base_strategy().config_dir().join("portone"))
 }
 
+pub(crate) fn try_config_dir() -> Option<PathBuf> {
+    env_override("PORTONE_CONFIG_DIR").or_else(|| {
+        etcetera::choose_base_strategy()
+            .ok()
+            .map(|base| base.config_dir().join("portone"))
+    })
+}
+
 pub fn cache_dir() -> PathBuf {
     env_override("PORTONE_CACHE_DIR").unwrap_or_else(|| base_strategy().cache_dir().join("portone"))
 }

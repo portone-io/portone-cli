@@ -1,6 +1,7 @@
 pub mod api;
 pub mod auth;
 pub mod completion;
+pub mod help;
 pub mod setup;
 
 use clap::{Parser, Subcommand};

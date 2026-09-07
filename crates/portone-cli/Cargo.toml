@@ -17,11 +17,13 @@ anstream = "1.0.0"
 anstyle = "1.0.14"
 anyhow = "1.0.104"
 base64 = "0.23.1"
-clap = { version = "4.6.6", features = ["derive", "env", "wrap_help"] }
+clap = { version = "4.6.6", features = ["derive", "env", "wrap_help", "string"] }
 clap_complete = "4.6.9"
 etcetera = "0.11.0"
 getrandom = "0.2.17"
 humantime = "2.4.0"
+i18n-embed = { version = "0.16.0", default-features = false, features = ["fluent-system", "desktop-requester", "rust-embed"] }
+i18n-embed-fl = "0.10.1"
 include_dir = "0.7.4"
 indicatif = "0.18.6"
 inquire = "0.9.4"
@@ -37,6 +39,7 @@ ureq = { version = "3.4.0", features = ["json", "platform-verifier"] }
 url = "2.5.8"
 
 [dev-dependencies]
+fluent-syntax = "0.12.0"
 assert_cmd = "2.2.2"
 httpmock = "0.8.3"
 predicates = "3.1.4"

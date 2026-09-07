@@ -1,8 +1,9 @@
-use clap::{Args, CommandFactory};
+use clap::Args;
 use clap_complete::aot::{Generator, Shell};
 
 use crate::error::CliError;
 use crate::factory::Factory;
+use crate::i18n::Localizer;
 
 #[derive(Debug, Args)]
 pub struct CompletionArgs {
@@ -15,7 +16,7 @@ pub struct CompletionArgs {
 }
 
 pub fn run(f: &mut Factory, args: CompletionArgs) -> Result<(), CliError> {
-    let mut cmd = crate::cmd::Cli::command();
+    let mut cmd = crate::cmd::help::command(&Localizer::english());
     cmd.set_bin_name("portone");
     cmd.build();
     args.shell.try_generate(&cmd, &mut f.io.out)?;

@@ -2,10 +2,27 @@ use std::process::{Command, Stdio};
 
 use url::Url;
 
+use crate::i18n::Localizer;
+
 pub fn open(url: &str) -> std::io::Result<()> {
-    let parsed = Url::parse(url).map_err(|err| invalid(format!("invalid URL {url}: {err}")))?;
+    open_localized(url, &Localizer::english())
+}
+
+pub fn open_localized(url: &str, localizer: &Localizer) -> std::io::Result<()> {
+    let parsed = Url::parse(url).map_err(|err| {
+        invalid(crate::tr!(
+            localizer,
+            "auth-browser-invalid-url",
+            url = url,
+            error = err.to_string()
+        ))
+    })?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(invalid(format!("refusing to open non-http URL: {url}")));
+        return Err(invalid(crate::tr!(
+            localizer,
+            "auth-browser-unsupported-url",
+            url = url
+        )));
     }
     let (program, args) = launcher();
     Command::new(program)

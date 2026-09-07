@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Context;
+use crate::i18n::LocalizedContext;
 use serde_json::{Map, Value, json};
 
 use super::assets;
@@ -46,10 +46,10 @@ fn update_codex_marketplace(marketplace_path: &Path) -> anyhow::Result<()> {
         Ok(raw) => Some(raw),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
         Err(err) => {
-            return Err(err).with_context(|| {
-                format!(
-                    "failed to read marketplace.json: {}",
-                    marketplace_path.display()
+            return Err(err).with_lcontext(|| {
+                crate::message!(
+                    "setup-read-marketplace-failed",
+                    path = marketplace_path.display()
                 )
             });
         }
@@ -60,10 +60,10 @@ fn update_codex_marketplace(marketplace_path: &Path) -> anyhow::Result<()> {
     if let Some(parent) = marketplace_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(marketplace_path, content).with_context(|| {
-        format!(
-            "failed to write marketplace.json: {}",
-            marketplace_path.display()
+    std::fs::write(marketplace_path, content).with_lcontext(|| {
+        crate::message!(
+            "setup-write-marketplace-failed",
+            path = marketplace_path.display()
         )
     })?;
     Ok(())
@@ -75,8 +75,8 @@ fn merge_marketplace(existing: Option<&str>) -> anyhow::Result<String> {
     let mut plugins: Vec<Value> = Vec::new();
 
     if let Some(raw) = existing {
-        let parsed: Value =
-            serde_json::from_str(raw).context("failed to parse marketplace.json")?;
+        let parsed: Value = serde_json::from_str(raw)
+            .lcontext(crate::message!("setup-parse-marketplace-failed"))?;
         if let Some(existing_name) = parsed.get("name").filter(|v| v.is_string()) {
             name = existing_name.clone();
         }
@@ -207,7 +207,16 @@ mod tests {
 
     #[test]
     fn merge_rejects_invalid_json() {
-        assert!(merge_marketplace(Some("{ invalid")).is_err());
+        let error = merge_marketplace(Some("{ invalid")).unwrap_err();
+        let source = error.root_cause().to_string();
+        assert_eq!(
+            crate::i18n::Localizer::english().format_error(&error),
+            format!("failed to parse marketplace.json: {source}")
+        );
+        assert_eq!(
+            crate::i18n::Localizer::korean().format_error(&error),
+            format!("marketplace.json 구문 분석 실패: {source}")
+        );
     }
 
     #[test]

@@ -4,9 +4,10 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, bail};
+use anyhow::bail;
 
 use crate::config::OAuthTokens;
+use crate::i18n::{LocalizedContext, LocalizedMessage, Localizer};
 
 pub const KEYRING_SERVICE: &str = "portone-cli";
 const KEYRING_TIMEOUT: Duration = Duration::from_secs(30);
@@ -26,17 +27,41 @@ impl fmt::Display for StoreError {
             StoreError::Unavailable(message) => write!(f, "{message}"),
             StoreError::Timeout => write!(
                 f,
-                "keyring did not respond within {} seconds",
-                KEYRING_TIMEOUT.as_secs()
+                "{}",
+                crate::message!("auth-keyring-timeout", seconds = KEYRING_TIMEOUT.as_secs())
             ),
             StoreError::Corrupt(message) => {
-                write!(f, "failed to parse stored tokens: {message}")
+                write!(
+                    f,
+                    "{}",
+                    crate::message!("auth-stored-token-parse-failed", error = message)
+                )
             }
         }
     }
 }
 
 impl std::error::Error for StoreError {}
+
+impl StoreError {
+    pub fn into_anyhow(self) -> anyhow::Error {
+        match self {
+            Self::Unavailable(message) => anyhow::anyhow!(message),
+            Self::Timeout => anyhow::anyhow!(crate::message!(
+                "auth-keyring-timeout",
+                seconds = KEYRING_TIMEOUT.as_secs()
+            )),
+            Self::Corrupt(message) => anyhow::anyhow!(crate::message!(
+                "auth-stored-token-parse-failed",
+                error = message
+            )),
+        }
+    }
+
+    pub fn localized(&self, localizer: &Localizer) -> String {
+        localizer.format_error(&self.clone().into_anyhow())
+    }
+}
 
 pub trait SecretStore {
     fn save(&self, credential_id: &str, tokens: &OAuthTokens) -> Result<(), StoreError>;
@@ -108,44 +133,39 @@ pub fn lock_refresh(key: &str) -> anyhow::Result<File> {
     let path = crate::config::paths::config_dir()
         .join("locks")
         .join(format!("{}.lock", sanitize(key)));
-    lock_file(
-        &path,
-        "another portone process is refreshing the token; try again shortly",
-    )
+    lock_file(&path, crate::message!("auth-refresh-lock-busy"))
 }
 
 pub fn lock_config() -> anyhow::Result<File> {
     // Keep the shared config lock separate from credential-specific locks.
     let path = crate::config::paths::config_dir().join("config.lock");
-    lock_file(
-        &path,
-        "another portone process is updating the config file; try again shortly",
-    )
+    lock_file(&path, crate::message!("auth-config-lock-busy"))
 }
 
-fn lock_file(path: &Path, busy_message: &str) -> anyhow::Result<File> {
+fn lock_file(path: &Path, busy_message: LocalizedMessage) -> anyhow::Result<File> {
     let dir = path.parent().expect("lock files have a parent directory");
     std::fs::create_dir_all(dir)
-        .with_context(|| format!("failed to create lock directory: {}", dir.display()))?;
+        .with_lcontext(|| crate::message!("auth-lock-directory-failed", path = dir.display()))?;
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(path)
-        .with_context(|| format!("failed to open lock file: {}", path.display()))?;
+        .with_lcontext(|| crate::message!("auth-lock-open-failed", path = path.display()))?;
     let deadline = Instant::now() + LOCK_TIMEOUT;
     loop {
         match file.try_lock() {
             Ok(()) => return Ok(file),
             Err(TryLockError::WouldBlock) => {
                 if Instant::now() >= deadline {
-                    bail!("{busy_message}");
+                    bail!(busy_message);
                 }
                 std::thread::sleep(LOCK_POLL);
             }
             Err(TryLockError::Error(err)) => {
-                return Err(err)
-                    .with_context(|| format!("failed to acquire lock: {}", path.display()));
+                return Err(err).with_lcontext(|| {
+                    crate::message!("auth-lock-acquire-failed", path = path.display())
+                });
             }
         }
     }

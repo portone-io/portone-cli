@@ -1,3 +1,4 @@
+use crate::i18n::Localizer;
 use serde_json::{Map, Value, json};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -48,6 +49,15 @@ impl Paginator {
     }
 
     pub fn advance(&mut self, params: &mut Map<String, Value>, body: &Value) -> Advance {
+        self.advance_localized(params, body, crate::i18n::english())
+    }
+
+    pub fn advance_localized(
+        &mut self,
+        params: &mut Map<String, Value>,
+        body: &Value,
+        localizer: &Localizer,
+    ) -> Advance {
         let total_count = body
             .get("page")
             .and_then(|p| p.get("totalCount"))
@@ -55,13 +65,11 @@ impl Paginator {
         let items = body.get("items").and_then(Value::as_array);
 
         if let Some(total) = total_count {
-            self.advance_offset(params, body, total, items)
+            self.advance_offset(params, body, total, items, localizer)
         } else if let Some(items) = items {
             self.advance_cursor(params, items)
         } else {
-            Advance::Stop(
-                "cannot determine pagination scheme; stopping after first page".to_string(),
-            )
+            Advance::Stop(crate::tr!(localizer, "core-pagination-unknown"))
         }
     }
 
@@ -71,6 +79,7 @@ impl Paginator {
         body: &Value,
         total: u64,
         items: Option<&Vec<Value>>,
+        localizer: &Localizer,
     ) -> Advance {
         let size = body
             .get("page")
@@ -88,7 +97,7 @@ impl Paginator {
             return Advance::Done;
         }
         if fetched + size > 60000 {
-            return Advance::Stop("offset pagination limit (60000) reached; stopping".to_string());
+            return Advance::Stop(crate::tr!(localizer, "core-pagination-limit"));
         }
 
         self.number += 1;
@@ -249,9 +258,10 @@ mod tests {
         let body = json!({"ok": true});
         assert_eq!(
             p.advance(&mut params, &body),
-            Advance::Stop(
-                "cannot determine pagination scheme; stopping after first page".to_string()
-            )
+            Advance::Stop(crate::tr!(
+                crate::i18n::english(),
+                "core-pagination-unknown"
+            ))
         );
     }
 }

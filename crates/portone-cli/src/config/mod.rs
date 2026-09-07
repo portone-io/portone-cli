@@ -3,12 +3,14 @@ pub mod paths;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use anyhow::Context;
+use crate::i18n::LocalizedContext;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.portone.io";
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Config {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_profile: Option<String>,
     #[serde(default)]
@@ -72,7 +74,7 @@ impl Config {
             }
             Err(err) => {
                 return Err(err)
-                    .with_context(|| format!("failed to read config file: {}", path.display()));
+                    .with_lcontext(|| crate::message!("core-config-read", path = path.display()));
             }
         };
         toml::from_str(&contents).map_err(|err| {
@@ -82,20 +84,25 @@ impl Config {
                 .next()
                 .unwrap_or("TOML parse error")
                 .to_string();
-            anyhow::anyhow!("invalid config file: {} ({position})", path.display())
+            anyhow::anyhow!(crate::message!(
+                "core-config-invalid",
+                path = path.display(),
+                position = position
+            ))
         })
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::path();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create config directory: {}", parent.display())
+            std::fs::create_dir_all(parent).with_lcontext(|| {
+                crate::message!("core-config-directory", path = parent.display())
             })?;
         }
-        let contents = toml::to_string_pretty(self).context("failed to serialize config")?;
+        let contents =
+            toml::to_string_pretty(self).lcontext(crate::message!("core-config-serialize"))?;
         write_private(&path, &contents)
-            .with_context(|| format!("failed to save config file: {}", path.display()))
+            .with_lcontext(|| crate::message!("core-config-save", path = path.display()))
     }
 }
 
@@ -156,6 +163,7 @@ mod tests {
             },
         );
         Config {
+            language: None,
             default_profile: Some("default".to_string()),
             profiles,
         }

@@ -11,6 +11,7 @@ use crate::auth::{self, browser};
 use crate::config::{Config, OAuthProfile, OAuthTokens, Storage};
 use crate::error::CliError;
 use crate::factory::Factory;
+use crate::i18n::{LocalizedErrorContext, Localizer};
 
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -45,10 +46,12 @@ pub struct LoginArgs {
 }
 
 pub fn run(f: &mut Factory, args: LoginArgs) -> Result<(), CliError> {
+    let localizer = f.localizer.clone();
     if let Some(name) = auth::active_env_credential() {
         let _ = writeln!(
             f.io.err,
-            "portone: the {name} environment variable is being used for authentication; unset it before storing login credentials"
+            "{}",
+            crate::tr!(localizer, "auth-login-env-active", name = name)
         );
         return Err(CliError::Silent);
     }
@@ -66,6 +69,7 @@ fn login_oauth(
     profile_name: &str,
     args: &LoginArgs,
 ) -> Result<(), CliError> {
+    let localizer = f.localizer.clone();
     let cfg = OAuthConfig::from_env(args.scopes.clone())?;
     let server = CallbackServer::bind(&cfg.redirect_uri)?;
     let pkce = oauth::generate_pkce()?;
@@ -74,43 +78,64 @@ fn login_oauth(
 
     let _ = writeln!(
         f.io.err,
-        "Complete console login in your browser. If the browser did not open, visit this URL:\n  {url}"
+        "{}\n  {url}",
+        crate::tr!(localizer, "auth-login-browser-instructions")
     );
     if !args.no_browser
-        && let Err(err) = browser::open(url.as_str())
+        && let Err(err) = browser::open_localized(url.as_str(), &localizer)
     {
-        let _ = writeln!(f.io.err, "portone: failed to open browser: {err}");
+        let _ = writeln!(
+            f.io.err,
+            "{}",
+            crate::tr!(
+                localizer,
+                "auth-login-browser-failed",
+                error = err.to_string()
+            )
+        );
     }
 
-    let code = match server.wait(&state, CALLBACK_TIMEOUT, &mut *f.io.err)? {
+    let code = match server.wait_localized(&state, CALLBACK_TIMEOUT, &mut *f.io.err, &localizer)? {
         Callback::Code(code) => code,
         Callback::Denied { error, description } => {
             let detail = description.map(|d| format!(" ({d})")).unwrap_or_default();
-            return Err(CliError::Other(anyhow!(
-                "console login was denied: {error}{detail}"
-            )));
+            return Err(CliError::Other(anyhow!(crate::message!(
+                "auth-login-denied",
+                error = error,
+                detail = detail
+            ))));
         }
     };
     drop(server);
 
     let agent = f.agent();
-    let tokens = oauth::exchange_code(&agent, &cfg, &code, &pkce.verifier)
-        .map_err(|err| CliError::Other(anyhow!("failed to obtain tokens: {err}")))?;
+    let tokens = oauth::exchange_code(&agent, &cfg, &code, &pkce.verifier).map_err(|err| {
+        CliError::Other(
+            err.into_anyhow()
+                .lcontext(crate::message!("auth-login-token-failed")),
+        )
+    })?;
     let missing = oauth::missing_scopes(&cfg.scopes, &tokens.scope);
     if !missing.is_empty() {
         let _ = writeln!(
             f.io.err,
-            "portone: some requested scopes were not granted: {}",
-            missing.join(", ")
+            "{}",
+            crate::tr!(
+                localizer,
+                "auth-login-missing-scopes",
+                scopes = missing.join(", ")
+            )
         );
     }
 
     let base_url = auth::resolve_base_url(args.base_url.as_deref(), Some(profile_name), config);
-    let plain_id = auth::verify_bearer(&agent, &base_url, &tokens.access_token)?.ok_or_else(|| {
-        CliError::Other(anyhow!(
-            "the issued token could not access {base_url}; verify that the console and API environments match"
-        ))
-    })?;
+    let plain_id =
+        auth::verify_bearer(&agent, &base_url, &tokens.access_token)?.ok_or_else(|| {
+            CliError::Other(anyhow!(crate::message!(
+                "auth-login-environment-mismatch",
+                base_url = base_url
+            )))
+        })?;
 
     let store = f.secret_store();
     let stored = store_web_login(
@@ -122,18 +147,33 @@ fn login_oauth(
         base_url,
         args.insecure_storage,
         &mut *f.io.err,
+        &localizer,
     )?;
 
-    let _ = writeln!(f.io.err, "Console login complete (merchant {plain_id})");
     let _ = writeln!(
         f.io.err,
-        "Stored console login credentials in profile '{profile_name}'."
+        "{}",
+        crate::tr!(localizer, "auth-login-complete", merchant = plain_id)
+    );
+    let _ = writeln!(
+        f.io.err,
+        "{}",
+        crate::tr!(localizer, "auth-login-stored", profile = profile_name)
     );
     let location = match (stored.storage, stored.credential_id.as_deref()) {
-        (Storage::Keyring, Some(id)) => format!("keyring ({KEYRING_SERVICE}/{id})"),
-        _ => "config file (plain text)".to_string(),
+        (Storage::Keyring, Some(id)) => crate::tr!(
+            localizer,
+            "auth-source-keyring",
+            service = KEYRING_SERVICE,
+            id = id
+        ),
+        _ => crate::tr!(localizer, "auth-storage-file"),
     };
-    let _ = writeln!(f.io.err, "Storage: {location}");
+    let _ = writeln!(
+        f.io.err,
+        "{}",
+        crate::tr!(localizer, "auth-storage", location = location)
+    );
     Ok(())
 }
 
@@ -152,6 +192,7 @@ pub(crate) fn store_web_login(
     base_url: String,
     insecure_storage: bool,
     err: &mut dyn Write,
+    localizer: &Localizer,
 ) -> Result<StoredLogin, CliError> {
     let previous = config
         .profiles
@@ -173,14 +214,21 @@ pub(crate) fn store_web_login(
         match store.save(&id, tokens) {
             Ok(()) => oauth.credential_id = Some(id),
             Err(StoreError::Timeout) => {
-                return Err(CliError::Other(anyhow!(
-                    "the keyring did not respond within 30 seconds ({KEYRING_SERVICE}/{id}); check the keyring and try again"
-                )));
+                return Err(CliError::Other(anyhow!(crate::message!(
+                    "auth-login-keyring-timeout",
+                    service = KEYRING_SERVICE,
+                    id = id
+                ))));
             }
             Err(error) => {
                 let _ = writeln!(
                     err,
-                    "portone: keyring is unavailable; storing tokens in the config file: {error}"
+                    "{}",
+                    crate::tr!(
+                        localizer,
+                        "auth-login-keyring-fallback",
+                        error = error.localized(localizer)
+                    )
                 );
                 oauth.storage = Storage::File;
                 oauth.tokens = Some(tokens.clone());
@@ -201,7 +249,13 @@ pub(crate) fn store_web_login(
         return Err(error.into());
     }
     if let Some(previous) = previous {
-        delete_previous_entry(store, &previous, oauth.credential_id.as_deref(), err);
+        delete_previous_entry(
+            store,
+            &previous,
+            oauth.credential_id.as_deref(),
+            err,
+            localizer,
+        );
     }
     Ok(StoredLogin {
         storage: oauth.storage,
@@ -214,6 +268,7 @@ fn delete_previous_entry(
     previous: &OAuthProfile,
     keep: Option<&str>,
     err: &mut dyn Write,
+    localizer: &Localizer,
 ) {
     let Some(id) = auth::normalize(previous.credential_id.as_deref()) else {
         return;
@@ -224,7 +279,14 @@ fn delete_previous_entry(
     if let Err(error) = store.delete(&id) {
         let _ = writeln!(
             err,
-            "portone: failed to delete previous console login tokens ({KEYRING_SERVICE}/{id}): {error}"
+            "{}",
+            crate::tr!(
+                localizer,
+                "auth-login-cleanup-failed",
+                service = KEYRING_SERVICE,
+                id = id,
+                error = error.localized(localizer)
+            )
         );
     }
 }
@@ -303,6 +365,7 @@ mod tests {
                 "https://api.example".to_string(),
                 false,
                 &mut err,
+                &Localizer::english(),
             )
             .unwrap();
             assert_eq!(stored.storage, Storage::Keyring);
@@ -348,6 +411,7 @@ mod tests {
                     "https://api.example".to_string(),
                     false,
                     &mut err,
+                    &Localizer::english(),
                 );
                 assert!(result.is_err());
                 assert_eq!(store.ids(), vec!["cred-old".to_string()]);
@@ -374,6 +438,7 @@ mod tests {
                 "https://api.example".to_string(),
                 false,
                 &mut err,
+                &Localizer::english(),
             )
             .unwrap();
             assert_eq!(stored.storage, Storage::File);
@@ -401,6 +466,7 @@ mod tests {
                 "https://api.example".to_string(),
                 false,
                 &mut err,
+                &Localizer::english(),
             );
             match result {
                 Err(CliError::Other(error)) => {
@@ -429,6 +495,7 @@ mod tests {
                 "https://api.example".to_string(),
                 true,
                 &mut err,
+                &Localizer::english(),
             )
             .unwrap();
             assert_eq!(stored.storage, Storage::File);
