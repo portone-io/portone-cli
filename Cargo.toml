@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/portone-cli"]
+
+[workspace.package]
+# Kept in sync with the package.json version by scripts/sync-cargo-version.mjs.
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/portone-io/portone-cli"
+authors = ["portone-dx <support@portone.io>"]
+
+[profile.release]
+strip = "symbols"
+codegen-units = 1
+lto = true
