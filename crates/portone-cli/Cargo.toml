@@ -18,6 +18,7 @@ anstyle = "1.0.14"
 anyhow = "1.0.104"
 base64 = "0.23.1"
 clap = { version = "4.6.6", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.6.9"
 etcetera = "0.11.0"
 getrandom = "0.2.17"
 humantime = "2.4.0"

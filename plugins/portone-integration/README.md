@@ -1,26 +1,21 @@
 # PortOne Integration Plugin
 
-포트원(PortOne) 결제 연동 코드 생성 및 검토를 도와주는 Claude Code 플러그인입니다.
+A Claude Code plugin for implementing and reviewing PortOne payment
+integrations.
 
-## 기능
+## Features
 
-### 코드 생성
-- 포트원 V1/V2 결제 연동 코드 자동 생성
-- 프론트엔드/백엔드 프레임워크별 맞춤 코드
-- 일반결제, 정기결제, 수기결제, 본인인증 지원
+- Generate PortOne V1 and V2 integration code for supported frontend and
+  backend frameworks.
+- Support one-time payments, billing-key payments, key-in payments, and
+  identity verification.
+- Review existing integrations for security, correctness, and PortOne best
+  practices.
 
-### 코드 검토
-- 기존 연동 코드 보안 점검
-- 베스트 프랙티스 준수 여부 확인
-- 개선 권장사항 제공
+## Prerequisite
 
-## 필수 조건
-
-이 플러그인을 사용하려면 `@portone/mcp-server` MCP 서버가 설정되어 있어야 합니다.
-
-### MCP 서버 설정
-
-프로젝트의 `.mcp.json` 파일에 다음 내용을 추가하세요:
+The plugin requires the `@portone/mcp-server` MCP server. Add it to the
+project's `.mcp.json` file:
 
 ```json
 {
@@ -34,101 +29,67 @@
 }
 ```
 
-## 사용 방법
+## Usage
 
-### 슬래시 커맨드
+### `/start`
 
-#### `/start`
+Generate payment integration code interactively:
 
-결제 연동 코드를 대화형으로 생성합니다.
-
-```
-/portone-integration:start                    # 대화형으로 모든 옵션 선택
-/portone-integration:start v2                 # V2 버전으로 생성
-/portone-integration:start v2 checkout        # V2 일반결제 코드 생성
-/portone-integration:start v1 billing         # V1 정기결제 코드 생성
+```text
+/portone-integration:start
+/portone-integration:start v2
+/portone-integration:start v2 checkout
+/portone-integration:start v1 billing
 ```
 
-**결제 유형:**
-- `checkout`: 일반결제 (PG 결제창)
-- `billing`: 정기결제 (빌링키 방식)
-- `keyin`: 수기결제 (카드 직접 입력)
-- `identity`: 본인인증
+Payment types:
 
-#### `/review`
+- `checkout`: one-time payment through a payment provider checkout window.
+- `billing`: recurring or on-demand payments using a billing key.
+- `keyin`: payment using card details entered directly.
+- `identity`: identity verification.
 
-기존 포트원 연동 코드를 검토합니다.
+### `/review`
 
+Review an existing PortOne integration:
+
+```text
+/portone-integration:review
+/portone-integration:review src/payment/
+/portone-integration:review src/api/pay.ts
 ```
-/portone-integration:review                  # 프로젝트 전체 검토
-/portone-integration:review src/payment/     # 특정 디렉토리 검토
-/portone-integration:review src/api/pay.ts   # 특정 파일 검토
+
+The plugin also activates its specialized agents and skills for natural
+language requests such as:
+
+```text
+Implement PortOne payment support.
+Add a recurring payment integration.
+Review this PortOne integration for security issues.
 ```
 
-### Claude Code 에이전트
+## Supported frameworks
 
-플러그인은 다음 상황에서 자동으로 에이전트를 활성화합니다:
+Frontend examples cover React, vanilla HTML/JavaScript, and Vue adaptations.
+Backend examples cover Express, FastAPI, Flask, and Spring with Kotlin.
 
-#### Payment Code Generator
-- "포트원 결제 기능 구현해줘"
-- "정기결제 연동 코드 작성해줘"
-- "카드 결제 코드 만들어줘"
+## Choosing an integration
 
-#### Integration Reviewer
-- "포트원 연동 코드 검토해줘"
-- "결제 연동 보안 점검해줘"
-- "PG 연동 코드 리뷰해줘"
+- Use one-time payments for individual purchases completed in a payment
+  provider checkout window.
+- Use billing-key payments for subscriptions, memberships, and server-initiated
+  charges.
+- Use identity verification for signup, age checks, and similar flows.
+- Prefer V2 for new projects. Use V1 when maintaining an existing V1
+  integration or when a required provider feature is only available in V1.
 
-### 스킬
+## Security
 
-"포트원 연동", "결제 연동", "빌링키" 등의 키워드로 질문하면 관련 가이드가 자동으로 로드됩니다.
+- Never expose an API Secret in client code.
+- Verify completed payments on the server.
+- Keep credentials in environment variables and exclude `.env` files from
+  version control.
 
-## 지원 프레임워크
-
-### 프론트엔드
-- React
-- HTML (Vanilla JS)
-- Vue (HTML 기반 적용)
-
-### 백엔드
-- Express (Node.js)
-- FastAPI (Python)
-- Flask (Python)
-- Spring/Kotlin
-
-## 결제 유형 안내
-
-### 단건결제
-PG사 결제창을 통한 인증 결제입니다.
-- 적합한 서비스: 쇼핑몰, 단건 상품 구매
-
-### 빌링결제
-빌링키를 발급받아 서버에서 원하는 시점에 결제를 호출합니다.
-- 적합한 서비스: SaaS, 구독 서비스, 멤버십
-
-### 본인인증
-휴대폰 또는 다양한 인증 수단으로 본인인증을 수행합니다.
-- 적합한 서비스: 회원가입, 성인인증
-
-## V1 vs V2
-
-### V2 (권장)
-- 신규 프로젝트에 권장
-- 최신 SDK 설계
-- 더 나은 타입 안전성
-- `PortOne` 인증 스킴 지원
-
-### V1
-- 레거시 프로젝트 지원
-- 기존 연동 유지보수
-
-## 보안 주의사항
-
-- API Secret은 절대 클라이언트 코드에 노출하지 마세요
-- 결제 완료 후 반드시 서버에서 검증하세요
-- 환경 변수로 모든 인증 정보를 관리하세요
-- `.env` 파일을 `.gitignore`에 추가하세요
-
-## 라이선스
+## License
 
 MIT License

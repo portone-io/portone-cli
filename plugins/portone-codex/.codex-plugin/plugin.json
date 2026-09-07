@@ -33,9 +33,9 @@
     "privacyPolicyURL": "https://privacy.portone.io/",
     "termsOfServiceURL": "https://terms.portone.io/global/en/feb2024",
     "defaultPrompt": [
-      "포트원 V2 일반결제 연동 코드를 구현해줘.",
-      "프로젝트의 포트원 연동 코드를 검토해줘.",
-      "포트원 빌링키 결제 흐름을 프로젝트에 맞게 추가해줘."
+      "Implement a PortOne V2 one-time payment integration.",
+      "Review the PortOne integration in this project.",
+      "Add a PortOne billing-key payment flow that matches this project."
     ],
     "brandColor": "#0D9488"
   }

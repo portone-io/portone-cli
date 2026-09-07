@@ -1,5 +1,6 @@
 pub mod api;
 pub mod auth;
+pub mod completion;
 pub mod setup;
 
 use clap::{Parser, Subcommand};
@@ -22,6 +23,8 @@ pub enum Command {
     Auth(auth::AuthArgs),
     #[command(about = "Install PortOne plugins for AI coding assistants")]
     Setup(setup::SetupArgs),
+    #[command(about = "Generate shell completion scripts")]
+    Completion(completion::CompletionArgs),
 }
 
 pub fn run(f: &mut Factory, command: Command) -> Result<(), CliError> {
@@ -29,5 +32,6 @@ pub fn run(f: &mut Factory, command: Command) -> Result<(), CliError> {
         Command::Api(args) => api::run(f, args),
         Command::Auth(args) => auth::run(f, args),
         Command::Setup(args) => setup::run(f, args),
+        Command::Completion(args) => completion::run(f, args),
     }
 }

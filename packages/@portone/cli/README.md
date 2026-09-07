@@ -1,8 +1,27 @@
 # portone-cli
 
-PortOne 결제/본인인증 연동을 위한 CLI 도구입니다. Claude Code와 Codex용 PortOne 플러그인을 각각 분리해 설치합니다.
+[![npm version](https://img.shields.io/npm/v/%40portone%2Fcli)](https://www.npmjs.com/package/@portone/cli)
+[![license](https://img.shields.io/github/license/portone-io/portone-cli)](https://github.com/portone-io/portone-cli/blob/main/LICENSE)
 
-## Usage
+PortOne CLI helps you integrate PortOne payments and identity verification. It
+provides authenticated PortOne V2 API requests (`portone api`), authentication
+management (`portone auth`), and PortOne plugin setup for Claude Code and Codex
+(`portone setup`).
+
+- Repository: <https://github.com/portone-io/portone-cli>
+- Issues: <https://github.com/portone-io/portone-cli/issues>
+
+## Installation
+
+```bash
+npm install --global @portone/cli
+```
+
+Node.js 20 or later is required.
+
+## `portone setup`
+
+Install the PortOne plugins for Claude Code, Codex, or both:
 
 ```bash
 portone setup
@@ -11,8 +30,250 @@ portone setup --assistant codex
 portone setup --assistant both
 ```
 
-## What It Sets Up
+The command installs the PortOne marketplace plugin for Claude Code and copies
+the local `plugins/portone-codex` plugin for Codex, updating
+`./.agents/plugins/marketplace.json` as needed. The Claude and Codex plugin
+bundles remain separate.
 
-- Claude Code용 PortOne marketplace/plugin 설치
-- Codex용 local plugin `plugins/portone-codex` 복사 및 `./.agents/plugins/marketplace.json` 구성
-- Claude plugin `plugins/portone-integration` 와 Codex plugin `plugins/portone-codex` 를 별도 유지
+Pass `--allow-dirty` to proceed when the Git working tree has uncommitted
+changes.
+
+## `portone auth`
+
+Manage credentials and profiles. Built-in authentication uses PortOne Console
+OAuth and sends `Authorization: Bearer <token>` for both REST and GraphQL
+requests.
+
+```bash
+portone auth login                # Authenticate through PortOne Console in a browser
+portone auth login --profile staging --base-url <URL>
+portone auth login --no-browser --scopes TX_READ,STORE_READ
+portone auth status               # Show the source, expiry, scopes, and validity
+portone auth status --show-secret # Show the unmasked access token
+portone auth token                # Print the current access token, refreshing if needed
+portone auth logout               # Remove local credentials without revoking the token
+```
+
+`login` validates the issued token before saving it.
+
+### Console login
+
+`auth login` starts a callback server on `127.0.0.1:1271` and opens the PortOne
+Console login page. Set `PORTONE_BROWSER` or `BROWSER` to choose the browser, or
+pass `--no-browser` to print the URL without opening it. The command exchanges
+the callback code, validates the token through GraphQL, and saves the
+credentials. It stops if no callback arrives within five minutes.
+
+- Access tokens are refreshed 60 seconds before expiry by `portone api`,
+  `auth status`, and `auth token`. An interprocess lock serializes refreshes on
+  the same machine.
+- Refresh tokens rotate on use and expire after 24 hours of inactivity. Run
+  `portone auth login` again after the session expires.
+- Log in separately on each machine. Copying a profile between machines can
+  invalidate one session when the other rotates its refresh token.
+- Tokens are stored in the OS keyring as `portone-cli/<credential_id>` (macOS
+  Keychain, Windows Credential Manager, or Linux Secret Service). If the
+  keyring is unavailable, the CLI warns and falls back to the config file. Use
+  `--insecure-storage` to choose file storage explicitly.
+- A profile retains the console URL, token endpoint, and API base URL from the
+  issuing environment so later commands use the same environment.
+
+Use `auth token` to pass a token to another tool such as the PortOne MCP server:
+
+```bash
+PORTONE_ACCESS_TOKEN=$(portone auth token) npx @portone/mcp-server
+```
+
+### Credential precedence
+
+1. `PORTONE_ACCESS_TOKEN`, used as provided and never refreshed by the CLI.
+2. An OAuth profile from the config file: `--profile`, then `default_profile`,
+   then `default`.
+
+`auth login` and `auth logout` refuse to run while `PORTONE_ACCESS_TOKEN` is
+set. Unset it before changing stored credentials.
+
+The API base URL is resolved independently in this order: `--base-url`,
+`PORTONE_API_BASE`, the selected profile's `base_url`, then
+`https://api.portone.io`.
+
+### Configuration
+
+The config file is stored at `~/.config/portone/config.toml` on Unix-like
+systems and `%APPDATA%\portone\config.toml` on Windows. Set
+`PORTONE_CONFIG_DIR` to use another directory. The file contains sensitive
+authentication metadata and is written with owner-only permissions (`0600`).
+
+Use profiles to separate credentials for different merchants or environments,
+and select one with `--profile <NAME>`:
+
+```toml
+default_profile = "default"
+
+[profiles.default]
+base_url = "https://api.portone.io"
+
+[profiles.default.oauth]
+storage = "keyring"          # Tokens are stored as portone-cli/<credential_id>
+credential_id = "..."
+client_id = "CLI"
+token_url = "https://merchant-service.prod.iamport.co/oauth/token"
+console_url = "https://admin.portone.io"
+```
+
+The login environment can be overridden with `PORTONE_CONSOLE_URL`,
+`PORTONE_MERCHANT_SERVICE_URL`, `PORTONE_OAUTH_CLIENT_ID`, and
+`PORTONE_OAUTH_REDIRECT_URI`. These variables only affect login.
+
+## `portone api`
+
+Make an authenticated PortOne V2 API request:
+
+```bash
+portone api <endpoint> [flags]
+```
+
+`<endpoint>` may be a path such as `/payments/{paymentId}` (replace the
+placeholder with an actual value), a full URL, or `graphql`. The method defaults
+to GET and switches to POST when request fields or `--input` supply a body.
+Override it with `-X`. `--paginate` keeps REST requests on GET and GraphQL
+requests on POST.
+
+See the [command reference](https://github.com/portone-io/portone-cli/blob/main/docs/reference/portone_api.md)
+for every flag. Only one of `--jq`, `--silent`, or `--verbose` may be used at a
+time.
+
+### Examples
+
+Get one payment:
+
+```bash
+portone api /payments/{paymentId}
+```
+
+Send filters in the GET request body used by PortOne V2 list endpoints:
+
+```bash
+portone api /payments -X GET -F 'page[size]=10' -F 'filter[isTest]=true'
+```
+
+`key[sub]=value` creates a nested object and repeated `key[]=value` fields
+create an array. `-F` converts integers, `true`, `false`, and `null` to JSON
+types and supports `@file` or `@-` for file and standard-input values. `-f`
+always sends a string.
+
+Fetch every page and print payment IDs:
+
+```bash
+portone api /payments -X GET --paginate -q '.items[].id'
+```
+
+Use `--slurp` to wrap every page in one JSON array. It cannot be combined with
+`--jq`:
+
+```bash
+portone api /payments -X GET --paginate --slurp
+```
+
+Read a request body from a file or standard input:
+
+```bash
+portone api /payments/{paymentId}/cancel --input cancel.json
+echo '{"reason":"Customer request"}' | portone api /payments/{paymentId}/cancel --input -
+```
+
+Cache eligible GET, HEAD, and GraphQL responses for a TTL. Responses with a
+403 or 5xx status are not cached. The default cache directory is
+`~/.cache/portone`; override it with `PORTONE_CACHE_DIR`.
+
+```bash
+portone api /payments/{paymentId} --cache 1h
+```
+
+Pass `Authorization` explicitly with `-H` to override stored credentials. The
+CLI also omits Authorization when a full endpoint URL has a different origin
+from the configured base URL.
+
+```bash
+portone api /payments/{paymentId} -H 'Idempotency-Key: abc123'
+portone api '/identity-verifications/{identityVerificationId}?storeId=store-xxx'
+```
+
+### GraphQL
+
+Use `graphql` as the endpoint to request `{base URL}/graphql`. Every field other
+than `query` and `operationName` is sent as a GraphQL variable:
+
+```bash
+portone api graphql -f query='query { merchant { ... on Merchant { id plainId } } }'
+
+portone api graphql \
+  -f query='query($id: ID!) { node(id: $id) { ... on Merchant { plainId } } }' \
+  -f id='MDptZXJjaGFudC...'
+```
+
+A response containing an `errors` array exits with status 1 even when the HTTP
+status is 200. The original JSON is written to stdout and the error message to
+stderr.
+
+GraphQL pagination requires an `$endCursor: String` variable and a
+`pageInfo { hasNextPage endCursor }` selection. Use nested field syntax for
+object variables:
+
+```bash
+portone api graphql --paginate --slurp \
+  -f storeId='<store-global-id>' \
+  -F 'filter[statuses][]=IN_PROGRESS' -F 'filter[cardCompanies][]' \
+  -f query='
+  query($storeId: ID!, $filter: PromotionFilterInput!, $endCursor: String) {
+    node(id: $storeId) {
+      ... on Store {
+        promotions(filter: $filter, first: 50, after: $endCursor) {
+          edges { node { id name status } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }'
+```
+
+### Embedded jq support
+
+`-q` and `--jq` use the embedded [jaq](https://github.com/01mf02/jaq) engine, so
+an external jq installation is not required. Most jq syntax and built-ins work,
+but some built-ins may be unavailable or behave differently. For complex
+transformations, piping the output to another tool remains an option.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success, including an output pipe that closes early |
+| 1 | HTTP 4xx/5xx, GraphQL errors, invalid flag combinations, or other runtime errors |
+| 2 | Command-line argument parsing error |
+
+## `portone completion`
+
+Generate completion scripts for Bash, Zsh, Fish, PowerShell, and Elvish:
+
+```bash
+# Zsh: save to a directory in $fpath
+portone completion zsh > "${fpath[1]}/_portone"
+
+# Bash
+portone completion bash > "$(brew --prefix)/etc/bash_completion.d/portone"
+
+# Fish
+portone completion fish > ~/.config/fish/completions/portone.fish
+```
+
+Open a new shell to enable `portone <TAB>` completion.
+
+## Command reference
+
+Detailed documentation for every command and flag is available in
+[docs/reference](https://github.com/portone-io/portone-cli/blob/main/docs/reference/index.md).
+It is generated from the CLI definitions and checked by CI.
+
+For patterns that help AI agents call `portone`, see
+[skills/portone-cli/SKILL.md](https://github.com/portone-io/portone-cli/blob/main/skills/portone-cli/SKILL.md).

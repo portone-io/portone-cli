@@ -428,6 +428,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be2ad0423bdbbb0e25bc89add796f3559706d4a95e1bc98e4d9662a957b6a19"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1887,6 +1896,7 @@ dependencies = [
  "assert_cmd",
  "base64 0.23.1",
  "clap",
+ "clap_complete",
  "etcetera",
  "getrandom 0.2.17",
  "httpmock",
@@ -3099,6 +3109,14 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "portone-cli",
+]
 
 [[package]]
 name = "yoke"

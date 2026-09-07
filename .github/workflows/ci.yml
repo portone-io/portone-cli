@@ -44,6 +44,10 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Reference docs up to date
+        if: matrix.os == 'ubuntu-24.04'
+        run: cargo xtask gen-docs --check
+
       - name: Check musl target
         if: matrix.os == 'ubuntu-24.04'
         run: |

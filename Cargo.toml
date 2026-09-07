@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/portone-cli"]
+members = ["crates/portone-cli", "crates/xtask"]
 
 [workspace.package]
 # Kept in sync with the package.json version by scripts/sync-cargo-version.mjs.

@@ -1,252 +1,110 @@
 ---
 name: portone-guide
-description: This skill should be used when the user asks about "포트원 연동", "PortOne integration", "결제 연동", "PG 연동", "billing key", "빌링키", "정기결제", "웹훅", "payment API", or needs guidance on implementing payment functionality with PortOne. Provides comprehensive guidance for V1 and V2 API integration and should coordinate with the payment-code-generator or integration-validator skills when implementation or verification is required.
-version: 1.0.0
+description: Guide PortOne V1 or V2 payment and identity-verification integrations using current official documentation, API schemas, SDK examples, and PortOne MCP tools.
 ---
 
-# PortOne Integration Guide
+# PortOne integration guide
 
-포트원(PortOne) 결제 연동에 필요한 핵심 개념과 MCP 도구 활용법을 안내한다. 코드 생성이 필요하면 `payment-code-generator` 스킬을, 검증이 필요하면 `integration-validator` 스킬을 함께 사용한다.
+Use this skill for PortOne concepts, architecture choices, and documentation
+discovery. Use the payment code generator for implementation and the integration
+validator for review when those capabilities are available.
 
-## Overview
+## Choose the integration
 
-포트원은 온라인 결제, 본인인증, 파트너 정산 자동화를 위한 API와 SDK를 제공하는 서비스이다. 다양한 PG사(결제대행사)를 하나의 통합 API로 연동할 수 있어 개발 복잡도를 크게 줄일 수 있다.
+Prefer V2 for a new project. Follow the version already used by an existing
+project unless the user requests a migration or a required provider capability
+dictates otherwise. V1 and V2 use different APIs and SDK patterns; never mix
+them within one flow.
 
-## Version Selection: V1 vs V2
+Common integration types:
 
-### V2 (권장)
-- 신규 프로젝트에 권장
-- 최신 SDK와 API 설계
-- 더 나은 타입 안전성
-- Bearer/PortOne 인증 스킴 지원
-- **V2 API 호출 시 `PortOne` 인증 스킴 우선 사용**
+- One-time payment: open a payment provider checkout window for an individual
+  card, bank transfer, virtual-account, mobile, or easy-pay purchase.
+- Billing-key payment: issue a billing key, store it securely on the server, and
+  charge it for subscriptions or other server-initiated payments.
+- Key-in payment: submit card details through an approved server-side flow. V2
+  availability requires a separate contract.
+- Identity verification: verify a user during signup, age checks, or other
+  identity-sensitive workflows.
 
-### V1
-- 레거시 프로젝트 지원
-- 기존 연동 유지보수
-- 일부 PG사 V1 전용 기능 존재
+If the version, payment type, payment provider, or required features cannot be
+derived from the request and repository, ask only for the missing decisions.
 
-사용자가 버전을 지정하지 않은 경우, 신규 프로젝트면 V2를, 기존 코드가 있으면 해당 버전을 따른다.
+## Use official sources
 
-## Payment Types
+Use the PortOne MCP server before writing or validating integration code.
 
-결제 유형을 선택할 때 다음 설명을 참고하여 사용자에게 안내한다:
+- Retrieve V2 frontend examples for React or HTML with the requested provider
+  and payment method.
+- Retrieve V2 backend examples for Express, FastAPI, Flask, or Spring/Kotlin.
+- Search and read official documentation for V1 flows and provider-specific
+  behavior.
+- Inspect the V1 or V2 OpenAPI schema for exact paths, fields, and enum values.
+- Retrieve merchant, channel, or shared test-channel information only when the
+  task requires it.
 
-### 단건결제
-- PG사 결제창을 통한 결제
-- 카드, 계좌이체, 가상계좌, 휴대폰 결제 등
-- 일회성 결제에 적합
-- **사용 시점**: 쇼핑몰, 단건 상품 구매
+Do not guess API fields or copy an example for a different PortOne version,
+provider, payment method, or SDK release.
 
-### 빌링결제
-- 빌링키 발급 후 서버에서 원하는 시점에 결제 호출
-- 구독 서비스, 월정액 서비스에 적합
-- **사용 시점**: SaaS, 구독 서비스, 정기 배송
+## Implementation flow
 
-### 본인인증
-- 휴대폰 본인인증 또는 이니시스 통합인증
-- 회원가입, 성인인증에 사용
-- **사용 시점**: 회원가입, 연령 제한 서비스
+1. Inspect the repository for frameworks, dependencies, existing PortOne code,
+   environment variables, and testing conventions.
+2. Confirm the PortOne version, integration type, payment provider, payment
+   method, and any nonstandard requirements.
+3. Retrieve the matching official examples and documentation.
+4. Adapt the examples to the project's structure and coding style.
+5. Implement server-side verification and webhook handling where applicable.
+6. Test the flow with a PortOne test channel and report required console setup.
 
-## MCP Tools Usage
+## Frontend guidance
 
-포트원 MCP 서버가 제공하는 도구들을 적극 활용한다.
+Load the V2 browser SDK from the official package and use the API shape returned
+by the current MCP example. Generate a unique payment identifier on the server
+or according to the application's trusted order flow. Keep store and channel
+identifiers configurable.
 
-### 코드 생성 시 필수 도구
+Handle user cancellation, provider errors, and network errors separately when
+the SDK exposes that distinction. A successful browser response is not proof
+that the order is paid.
 
-**V2 코드 작성 전 반드시 예시 코드 조회:**
+## Backend guidance
 
-```
-mcp__portone__readPortoneV2FrontendCode
-- framework: react, html 중 선택
-- pg: toss, nice, inicis 등
-- pay_method: card, virtualAccount, easyPay 등
+Keep credentials on the server and prefer a supported PortOne Server SDK for V2.
+After the browser flow completes:
 
-mcp__portone__readPortoneV2BackendCode
-- framework: express, fastapi, flask, spring-kotlin 중 선택
-- pg: 사용할 PG사
-- pay_method: 결제 수단
-```
+1. Retrieve the payment from PortOne.
+2. Verify its status, amount, currency, store, and order ownership.
+3. Update the order atomically and idempotently.
+4. Reject duplicate, mismatched, cancelled, or failed payments.
 
-### 문서 조회 도구
+For billing-key flows, treat billing keys as sensitive data and initiate charges
+only from an authenticated, authorized server context.
 
-```
-mcp__portone__listPortoneDocs
-- 문서 목록 조회
-- dev_docs, help_docs, release_notes 필터링
+## Webhooks
 
-mcp__portone__readPortoneDoc
-- 개별 문서 내용 조회
-- path, fields 지정
+Register an HTTPS webhook URL in PortOne Console. Verify webhook authenticity
+using the current PortOne documentation, tolerate retries and out-of-order
+delivery, and make processing idempotent. Fetch the authoritative resource from
+PortOne before changing business state when the event payload is not sufficient.
 
-mcp__portone__regexSearchPortoneDocs
-- 정규식 기반 문서 검색
-- 키워드로 관련 문서 찾기
-```
+## Security requirements
 
-### API 스키마 조회
-
-```
-mcp__portone__readPortoneOpenapiSchemaSummary
-- V1/V2 API 전체 요약
-
-mcp__portone__readPortoneOpenapiSchema
-- 특정 API 상세 스키마
-- yaml_path로 경로 지정
-```
-
-### 상점/채널 정보
-
-```
-mcp__portone__listStores
-- 연결된 상점 정보
-
-mcp__portone__getChannelsOfStore
-- 상점의 채널 목록
-
-mcp__portone__listSharedTestChannels
-- 테스트용 공유 채널
-```
-
-## Integration Workflow
-
-### 1. 환경 파악
-- 프론트엔드/백엔드 프레임워크 확인
-- 포트원 버전 결정 (V1/V2)
-- 결제 유형 결정
-
-### 2. 예시 코드 조회
-- V2의 경우 `readPortoneV2FrontendCode`, `readPortoneV2BackendCode` 사용
-- V1의 경우 `readPortoneDoc`으로 관련 문서 조회
-
-### 3. 코드 생성
-- 예시 코드를 프로젝트 구조에 맞게 수정
-- 환경 변수로 API 키 관리
-- 에러 핸들링 추가
-
-### 4. 웹훅 연동
-- 결제 상태 변경 알림 처리
-- 가상계좌 입금 통보 등
-
-## Code Generation Guidelines
-
-### 프론트엔드
-
-**SDK 로드 (V2):**
-```javascript
-import * as PortOne from "@portone/browser-sdk/v2";
-```
-
-**결제 요청:**
-```javascript
-const response = await PortOne.requestPayment({
-  storeId: "store-id",
-  channelKey: "channel-key",
-  paymentId: `payment-${crypto.randomUUID()}`,
-  orderName: "주문명",
-  totalAmount: 1000,
-  currency: "KRW",
-  payMethod: "CARD",
-});
-```
-
-### 백엔드
-
-**결제 검증 (V2):**
-```javascript
-const response = await fetch(
-  `https://api.portone.io/payments/${paymentId}`,
-  {
-    headers: {
-      Authorization: `PortOne ${PORTONE_API_SECRET}`,
-    },
-  }
-);
-```
-
-**중요**: V2 API 호출 시 `Bearer` 대신 `PortOne` 인증 스킴 우선 사용.
-
-## Security Considerations
-
-### API 키 관리
-- API Secret은 절대 클라이언트에 노출하지 않음
-- 환경 변수로 관리 (`.env` 파일)
-- 커밋에서 제외 (`.gitignore`)
-
-### 결제 검증
-- 프론트엔드 결제 완료 후 반드시 서버에서 검증
-- 금액 일치 여부 확인
-- 결제 상태 확인
-
-### 웹훅 검증
-- 웹훅 시그니처 검증
-- 중복 처리 방지 (멱등성)
-
-## Error Handling
-
-### 일반적인 에러 케이스
-- 사용자 결제 취소
-- 카드 한도 초과
-- 네트워크 오류
-- PG사 오류
-
-### 에러 응답 처리
-```javascript
-if (response.code) {
-  // 에러 발생
-  console.error(response.message);
-  // 사용자에게 적절한 메시지 표시
-}
-```
-
-## Webhook Integration
-
-### 웹훅 설정
-- 포트원 콘솔에서 웹훅 URL 등록
-- HTTPS 필수
-- 타임아웃 고려
-
-### 웹훅 처리
-```javascript
-app.post("/webhook", async (req, res) => {
-  const { payment_id, status } = req.body;
-  // 결제 상태 업데이트
-  // 주문 처리
-  res.status(200).send("OK");
-});
-```
-
-## Common Integration Patterns
-
-### 일반결제 플로우
-1. 클라이언트: SDK로 결제창 호출
-2. 사용자: 결제 진행
-3. 클라이언트: 결제 결과 수신
-4. 서버: 결제 검증 API 호출
-5. 서버: 주문 상태 업데이트
-
-### 정기결제 플로우
-1. 클라이언트: 빌링키 발급 창 호출
-2. 서버: 빌링키 저장
-3. 서버: 정기 스케줄에 따라 결제 API 호출
-4. 서버: 결제 결과 처리
+- Never expose an API Secret, billing key, or private channel credential in
+  browser code, logs, commits, or error responses.
+- Store server credentials in environment variables or an approved secret
+  manager.
+- Do not commit `.env` files.
+- Validate amount and payment status on the server before fulfilling an order.
+- Authorize access to order and payment identifiers; do not trust client input.
+- Verify webhooks and defend against duplicate delivery.
 
 ## Testing
 
-### 테스트 환경
-- 포트원 테스트 채널 사용
-- 실제 결제 없이 연동 테스트
-- `mcp__portone__listSharedTestChannels`로 테스트 채널 조회
+Use test channels and provider-specific test data from official documentation.
+Cover success, user cancellation, declined payment, amount mismatch, duplicate
+completion, server verification failure, webhook retries, and invalid webhook
+authentication.
 
-### 테스트 카드
-- PG사별 테스트 카드 번호 사용
-- 문서에서 테스트 정보 확인
-
-## Additional Resources
-
-### Reference Files
-- **`references/v2-integration-details.md`** - V2 연동 상세 가이드
-- **`references/webhook-patterns.md`** - 웹훅 처리 패턴
-
-### MCP Documentation
-포트원 MCP 서버 도구를 통해 최신 문서와 API 스키마를 항상 조회할 수 있다. 코드 작성 전 반드시 예시 코드와 문서를 확인한다.
+Before production, confirm live channel configuration, production credentials,
+allowed origins, webhook reachability, observability, and recovery behavior.
