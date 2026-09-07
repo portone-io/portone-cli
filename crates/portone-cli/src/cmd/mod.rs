@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod setup;
 
 use clap::{Parser, Subcommand};
@@ -14,12 +15,15 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(about = "Authenticate with PortOne")]
+    Auth(auth::AuthArgs),
     #[command(about = "Install PortOne plugins for AI coding assistants")]
     Setup(setup::SetupArgs),
 }
 
 pub fn run(f: &mut Factory, command: Command) -> Result<(), CliError> {
     match command {
+        Command::Auth(args) => auth::run(f, args),
         Command::Setup(args) => setup::run(f, args),
     }
 }
