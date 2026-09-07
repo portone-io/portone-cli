@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2025]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
+
+      - name: Check musl target
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          cargo check --target x86_64-unknown-linux-musl --all-targets
+
+  vet:
+    name: Supply chain (cargo vet)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-vet
+        uses: taiki-e/install-action@1329c298aa20c3257846c9b2e0e55967df3e3c37
+        with:
+          tool: cargo-vet
+
+      - name: Vet dependencies
+        run: cargo vet --locked

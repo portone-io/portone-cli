@@ -4,13 +4,13 @@
 
 ### Minor Changes
 
-- 9d0589d: codex plugin 지원
+- 9d0589d: Add Codex plugin support
 
 ## 0.0.2
 
 ### Patch Changes
 
-- 192e025: 작업이 완료되면 VCS에 커밋하는 프롬프트 추가
+- 192e025: Add a prompt to commit completed work to version control
 
 ## 0.0.1
 

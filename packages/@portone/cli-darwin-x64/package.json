@@ -1,0 +1,24 @@
+{
+  "name": "@portone/cli-darwin-x64",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/portone-io/portone-cli.git",
+    "directory": "packages/@portone/cli-darwin-x64"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "homepage": "https://portone.io",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "publishConfig": {
+    "provenance": true
+  }
+}

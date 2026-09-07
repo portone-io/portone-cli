@@ -1,0 +1,38 @@
+{
+  "name": "@portone/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "portone": "bin/portone.js"
+  },
+  "homepage": "https://portone.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/portone-io/portone-cli.git",
+    "directory": "packages/@portone/cli"
+  },
+  "author": "portone-dx <support@portone.io>",
+  "license": "MIT",
+  "bugs": "https://github.com/portone-io/portone-cli/issues",
+  "description": "PortOne \uacb0\uc81c/\ubcf8\uc778\uc778\uc99d \uc5f0\ub3d9\uc744 \uc704\ud55c CLI \ub3c4\uad6c",
+  "files": [
+    "bin/portone.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.6"
+  },
+  "publishConfig": {
+    "provenance": true
+  },
+  "optionalDependencies": {
+    "@portone/cli-win32-x64": "workspace:*",
+    "@portone/cli-win32-arm64": "workspace:*",
+    "@portone/cli-darwin-x64": "workspace:*",
+    "@portone/cli-darwin-arm64": "workspace:*",
+    "@portone/cli-linux-x64": "workspace:*",
+    "@portone/cli-linux-arm64": "workspace:*",
+    "@portone/cli-linux-x64-musl": "workspace:*",
+    "@portone/cli-linux-arm64-musl": "workspace:*"
+  }
+}

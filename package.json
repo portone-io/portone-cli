@@ -1,54 +1,18 @@
 {
-  "name": "@portone/cli",
-  "version": "0.1.0",
-  "private": false,
-  "description": "PortOne 결제/본인인증 연동을 위한 CLI 도구 (Claude Code/Codex 지원)",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "portone": "./bin/portone.js"
-  },
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
-    "prepublishOnly": "pnpm run build"
-  },
-  "files": [
-    "dist",
-    "bin",
-    "README.md",
-    "plugins",
-    ".agents"
-  ],
-  "keywords": [
-    "portone",
-    "payment",
-    "identity-verification",
-    "claude-code",
-    "codex",
-    "cli"
-  ],
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/portone-io/portone-cli"
-  },
-  "dependencies": {
-    "@inquirer/prompts": "^8.0.2",
-    "chalk": "^5.6.2",
-    "commander": "^12.1.0",
-    "inquirer": "^13.3.2",
-    "ora": "^9.0.0"
+  "author": "portone-dx <support@portone.io>",
+  "repository": "https://github.com/portone-io/portone-cli",
+  "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",
+  "scripts": {
+    "version": "changeset version && node scripts/sync-cargo-version.mjs && pnpm i --lockfile-only"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.30.0",
-    "@types/node": "^20.17.6",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "@changesets/cli": "^2.30.0"
   },
   "engines": {
     "node": ">=20.0.0"
-  },
-  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+  }
 }

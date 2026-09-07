@@ -1,0 +1,386 @@
+# Based on: https://github.com/biomejs/biome/blob/ca81e98ffd9aa648db6b746e26d0dfcce3d3c8c1/.github/workflows/release.yml
+# Copyright (c) 2025 Biome Developers and Contributors (MIT License)
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  changesets:
+    name: Release
+    outputs:
+      hasChangesets: ${{ steps.changesets-action.outputs.hasChangesets }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # Required to push version commits created by changesets/action.
+      pull-requests: write # Required to open or update the release pull request.
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create Release Pull Request
+        id: changesets-action
+        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf
+        with:
+          version: pnpm run version
+          commit: "ci: release"
+          title: "ci: release"
+          commitMode: github-api
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Retrieve version of `@portone/cli`
+  version:
+    name: Check CLI version
+    runs-on: ubuntu-24.04
+    needs: changesets
+    if: needs.changesets.outputs.hasChangesets == 'false'
+    permissions:
+      contents: read
+    outputs:
+      cli-version: ${{ steps.cli-version-changed.outputs.version }}
+      cli-version-changed: ${{ steps.cli-version-changed.outputs.changed }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Check CLI version changes
+        id: cli-version-changed
+        uses: EndBug/version-check@095362f3cd50f690c8fa0e6afeea81834bd8d320
+        with:
+          diff-search: true
+          file-name: packages/@portone/cli/package.json
+
+  # Building jobs
+
+  build-binaries:
+    needs: version
+    if: needs.version.outputs.cli-version-changed == 'true'
+    outputs:
+      version: ${{ needs.version.outputs.cli-version }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            code-target: win32-x64
+          - os: windows-2025
+            target: aarch64-pc-windows-msvc
+            code-target: win32-arm64
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            code-target: linux-x64-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            code-target: linux-arm64-musl
+          - os: macos-14
+            target: x86_64-apple-darwin
+            code-target: darwin-x64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            code-target: darwin-arm64
+
+    name: Package ${{ matrix.code-target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: rustup target add "$TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
+
+      - name: Install musl toolchain
+        if: matrix.code-target == 'linux-x64-musl' || matrix.code-target == 'linux-arm64-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@1329c298aa20c3257846c9b2e0e55967df3e3c37
+        if: matrix.code-target == 'linux-x64-musl'
+        with:
+          tool: cargo-audit
+
+      - name: Audit crates.io dependencies
+        if: matrix.code-target == 'linux-x64-musl'
+        run: cargo audit
+
+      # Build the CLI binary
+      - name: Build binaries
+        run: cargo build -p portone-cli --release --target "$TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
+          # Strip all debug symbols from the resulting binaries
+          RUSTFLAGS: "-C strip=symbols -C codegen-units=1"
+
+      # Copy the CLI binary and rename it to include the name of the target platform
+      - name: Copy CLI binary
+        if: matrix.os == 'windows-2025'
+        run: |
+          mkdir dist
+          cp "target/$TARGET/release/portone.exe" "./dist/portone-$CODE_TARGET.exe"
+        env:
+          TARGET: ${{ matrix.target }}
+          CODE_TARGET: ${{ matrix.code-target }}
+      - name: Copy CLI binary
+        if: matrix.os != 'windows-2025'
+        run: |
+          mkdir dist
+          cp "target/$TARGET/release/portone" "./dist/portone-$CODE_TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
+          CODE_TARGET: ${{ matrix.code-target }}
+
+      # Upload the CLI binary as a build artifact
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cli-${{ matrix.target }}
+          path: ./dist/portone-*
+          if-no-files-found: error
+
+  # Build GNU/Linux binaries in Docker, using Debian 11 (bullseye), to support older versions of glibc.
+  build-binaries-gnu:
+    needs: version
+    if: needs.version.outputs.cli-version-changed == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            code-target: linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            code-target: linux-arm64
+
+    name: Package ${{ matrix.code-target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    container:
+      image: rust:1.89.0-bullseye@sha256:8f72d971a31b278cebdb2eb64a44c3900ff27c716a4ef6f4db05946d10c9ae4e
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Set jemalloc page size for linux-arm64
+        if: matrix.code-target == 'linux-arm64'
+        run: |
+          echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
+
+      # Build the CLI binary
+      - name: Build binaries
+        run: cargo build -p portone-cli --release --target "$TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
+          # Strip all debug symbols from the resulting binaries
+          RUSTFLAGS: "-C strip=symbols -C codegen-units=1"
+
+      # Copy the CLI binary and rename it to include the name of the target platform
+      - name: Copy CLI binary
+        run: |
+          mkdir dist
+          cp "target/$TARGET/release/portone" "./dist/portone-$CODE_TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
+          CODE_TARGET: ${{ matrix.code-target }}
+
+      # Upload the CLI binary as a build artifact
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cli-${{ matrix.target }}
+          path: ./dist/portone-*
+          if-no-files-found: error
+
+  # Publishing jobs
+
+  package-cli:
+    name: Package CLI
+    runs-on: ubuntu-24.04
+    needs:
+      - build-binaries
+      - build-binaries-gnu
+    if: needs.build-binaries.outputs.version
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: cli-*
+          merge-multiple: true
+      - name: Install Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e
+
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate npm packages
+        run: node packages/@portone/cli/scripts/generate-packages.js
+
+      - name: Pack npm packages
+        run: |
+          mkdir npm-packages
+          for package in packages/@portone/*; do
+            npm pack "$package" --pack-destination npm-packages
+          done
+
+      - name: Upload npm package tarballs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: npm-packages
+          path: npm-packages/*.tgz
+          if-no-files-found: error
+
+      - name: Generate release notes
+        run: bash scripts/print-changelog.sh "$VERSION" > RELEASE_NOTES
+        env:
+          VERSION: ${{ needs.build-binaries.outputs.version }}
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-notes
+          path: RELEASE_NOTES
+          if-no-files-found: error
+
+  publish-cli:
+    name: Publish CLI
+    runs-on: ubuntu-24.04
+    needs:
+      - build-binaries
+      - build-binaries-gnu
+      - package-cli
+    if: needs.build-binaries.outputs.version
+    environment: npm-publish
+    permissions:
+      contents: write # Required to create the GitHub release and tag.
+      id-token: write # Required for npm provenance during publish.
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: cli-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Download npm package tarballs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: npm-packages
+          path: npm-packages
+
+      - name: Download release notes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-notes
+          path: .
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      # Publish platform packages first and @portone/cli last so its optional
+      # dependencies already exist when users install it.
+      - name: Publish npm packages as latest
+        run: |
+          shopt -s nullglob
+          platform_packages=(./npm-packages/portone-cli-[a-z]*.tgz)
+          main_package=(./npm-packages/portone-cli-[0-9]*.tgz)
+          if [ "${#platform_packages[@]}" -eq 0 ] || [ "${#main_package[@]}" -ne 1 ]; then
+            echo "Unexpected npm package tarballs" >&2
+            exit 1
+          fi
+          for package in "${platform_packages[@]}" "${main_package[@]}"; do
+            npm publish "$package" --tag latest --access public --provenance
+          done
+
+      - name: Create GitHub @portone/cli release and tag
+        run: |
+          shopt -s nullglob
+          assets=(release-assets/portone-*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found" >&2
+            exit 1
+          fi
+          gh release create "$TAG_NAME" "${assets[@]}" \
+            --title "PortOne CLI v$VERSION" \
+            --notes-file RELEASE_NOTES \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: "@portone/cli@${{ needs.build-binaries.outputs.version }}"
+          VERSION: ${{ needs.build-binaries.outputs.version }}
+
+      # Keep notifications last and non-blocking so they cannot fail the release job.
+      - name: Send a Slack notification
+        continue-on-error: true
+        env:
+          VERSION: ${{ needs.build-binaries.outputs.version }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set; skipping notification"
+            exit 0
+          fi
+          curl -X POST -H 'Content-type: application/json'\
+            --data '{"blocks":[{"type":"section","text":{"type":"mrkdwn","text":"`@portone/cli` version *v'"$VERSION"'* has been published to npm :rocket:\ncc @dx-engineers"}},{"type":"actions","elements":[{"type":"button","text":{"type":"plain_text","text":"View on npm"},"value":"show_npm_page","url":"https://www.npmjs.com/package/@portone/cli/v/'"$VERSION"'","action_id":"show_npm_page"},{"type":"button","text":{"type":"plain_text","text":"View changelog"},"value":"show_changelog","url":"https://github.com/portone-io/portone-cli/blob/main/packages/@portone/cli/CHANGELOG.md","action_id":"show_changelog"}]}]}'\
+            "$SLACK_WEBHOOK_URL"

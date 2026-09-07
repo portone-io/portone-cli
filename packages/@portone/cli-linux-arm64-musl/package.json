@@ -1,0 +1,27 @@
+{
+  "name": "@portone/cli-linux-arm64-musl",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/portone-io/portone-cli.git",
+    "directory": "packages/@portone/cli-linux-arm64-musl"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "homepage": "https://portone.io",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "musl"
+  ],
+  "publishConfig": {
+    "provenance": true
+  }
+}

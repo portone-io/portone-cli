@@ -2,7 +2,19 @@
 	"$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
 	"changelog": "@changesets/cli/changelog",
 	"commit": false,
-	"fixed": [],
+	"fixed": [
+		[
+			"@portone/cli",
+			"@portone/cli-darwin-arm64",
+			"@portone/cli-darwin-x64",
+			"@portone/cli-linux-arm64",
+			"@portone/cli-linux-arm64-musl",
+			"@portone/cli-linux-x64",
+			"@portone/cli-linux-x64-musl",
+			"@portone/cli-win32-arm64",
+			"@portone/cli-win32-x64"
+		]
+	],
 	"linked": [],
 	"access": "public",
 	"baseBranch": "main",
