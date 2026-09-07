@@ -78,8 +78,8 @@ fn bearer_ok<'a>(server: &'a MockServer, token: &str) -> httpmock::Mock<'a> {
 }
 
 #[test]
-fn paginate_refreshes_oauth_between_rest_pages() {
-    {
+fn paginate_refreshes_oauth_between_rest_and_graphql_pages() {
+    for graphql in [false, true] {
         let config = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap();
         let server = MockServer::start();
@@ -97,12 +97,19 @@ fn paginate_refreshes_oauth_between_rest_pages() {
                     "expires_in": 1800, "token_type": "Bearer", "scope": ["TX_READ"]
                 }));
         });
-        let path = "/payments";
+        let path = if graphql { "/graphql" } else { "/payments" };
         let first_page = server.mock(|when, then| {
-            when.method(GET)
+            when.method(if graphql { POST } else { GET })
                 .path(path)
                 .header("authorization", "Bearer access-2");
-            let body = json!({"items": [{"id": "first"}], "page": {"size": 1, "totalCount": 2}});
+            let body = if graphql {
+                json!({"data": {"items": {
+                    "nodes": [{"id": "first"}],
+                    "pageInfo": {"hasNextPage": true, "endCursor": "cursor-1"}
+                }}})
+            } else {
+                json!({"items": [{"id": "first"}], "page": {"size": 1, "totalCount": 2}})
+            };
             then.status(200)
                 .header("content-type", "application/json")
                 // Move the freshly issued token into the 60-second refresh window.
@@ -110,12 +117,23 @@ fn paginate_refreshes_oauth_between_rest_pages() {
                 .json_body(body);
         });
         let second_page = server.mock(|when, then| {
-            let page = r#"{"page":{"number":1,"size":1}}"#;
-            when.method(GET)
+            let page = if graphql {
+                r#"{"variables":{"endCursor":"cursor-1"}}"#
+            } else {
+                r#"{"page":{"number":1,"size":1}}"#
+            };
+            when.method(if graphql { POST } else { GET })
                 .path(path)
                 .header("authorization", "Bearer access-3")
                 .json_body_includes(page);
-            let body = json!({"items": [{"id": "second"}], "page": {"size": 1, "totalCount": 2}});
+            let body = if graphql {
+                json!({"data": {"items": {
+                    "nodes": [{"id": "second"}],
+                    "pageInfo": {"hasNextPage": false, "endCursor": null}
+                }}})
+            } else {
+                json!({"items": [{"id": "second"}], "page": {"size": 1, "totalCount": 2}})
+            };
             then.status(200)
                 .header("content-type", "application/json")
                 .json_body(body);
@@ -129,7 +147,15 @@ fn paginate_refreshes_oauth_between_rest_pages() {
             1,
         );
         let mut cmd = portone(config.path(), cache.path());
-        cmd.args(["api", "/payments", "--paginate", "--slurp"]);
+        cmd.args([
+            "api",
+            if graphql { "graphql" } else { "/payments" },
+            "--paginate",
+            "--slurp",
+        ]);
+        if graphql {
+            cmd.args(["-f", "query=query($endCursor: String) { items(after: $endCursor) { nodes { id } pageInfo { hasNextPage endCursor } } }"]);
+        }
         cmd.assert()
             .success()
             .stdout(predicate::str::contains("first").and(predicate::str::contains("second")))
@@ -181,6 +207,7 @@ fn long_help_has_examples_but_short_help_does_not() {
         .unwrap();
     let long = String::from_utf8_lossy(&long.stdout);
     assert!(long.contains("authenticated HTTP request to the PortOne V2 API"));
+    assert!(long.contains("$ portone api graphql"));
 
     let short = portone(config.path(), cache.path())
         .args(["api", "-h"])

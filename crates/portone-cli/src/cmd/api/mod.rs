@@ -1,4 +1,5 @@
 pub mod fields;
+pub mod graphql;
 
 use std::io::Write;
 use std::time::Duration;
@@ -20,7 +21,8 @@ use crate::ui::pager::Pager;
 const LONG_ABOUT: &str = r#"Makes an authenticated HTTP request to the PortOne V2 API and prints the response.
 
 The `<ENDPOINT>` argument can be a REST path such as `/payments/{paymentId}`
-(replace placeholders with actual values) or a full URL. Paths are appended to `--base-url`, which defaults to
+(replace placeholders with actual values), a full URL, or `graphql` for the
+GraphQL API. Paths are appended to `--base-url`, which defaults to
 `https://api.portone.io`. Full URLs are used as-is. The Authorization header is
 not sent when a full URL has a different origin from the base URL.
 
@@ -39,14 +41,20 @@ Pass `-f/--raw-field` values in `key=value` format to add string fields.
 Use `key[subkey]=value` for nested values, repeated `key[]=value` fields for
 arrays, and `key[]` without a value for an empty array.
 
+For GraphQL requests, every field other than `query` and `operationName` is
+sent as a GraphQL variable. A response with an `errors` array exits with status
+1 even when the HTTP status is 200.
+
 Pass a preconstructed body with `--input <FILE>`, or use `-` to read from
 standard input. `--input` cannot be combined with field flags or `--paginate`.
 
 With `--paginate`, requests continue until there are no more pages. REST
 pagination uses either `page.totalCount` for offset pagination or
 `items[].cursor` for cursor pagination. When no `page` field is supplied,
-offset pagination starts with `number=0, size=100`. Each page is printed as a
-separate JSON value; use `--slurp` to wrap all pages in one array.
+offset pagination starts with `number=0, size=100`. GraphQL pagination requires
+an `$endCursor: String` variable and a `pageInfo { hasNextPage endCursor }`
+selection. Each page is printed as a separate JSON value; use `--slurp` to wrap
+all pages in one array.
 
 `-q/--jq` uses the embedded jaq engine and cannot be combined with `--slurp`.
 Only one of `--jq`, `--silent`, or `--verbose` may be used at a time.
@@ -91,12 +99,37 @@ $ portone api /payments -X GET --paginate -q '.items[].id'
 $ portone api /payments-by-cursor -X GET --paginate --slurp
 
 # Cache a response for one hour
-$ portone api /payments/{paymentId} --cache 1h"#;
+$ portone api /payments/{paymentId} --cache 1h
+
+# Make a GraphQL query
+$ portone api graphql \
+  -f query='query { merchant { ... on Merchant { id plainId } } }'
+
+# Pass GraphQL variables (all fields other than query become variables)
+$ portone api graphql -f id='<merchant-global-id>' -f query='
+  query($id: ID!) { node(id: $id) { ... on Merchant { plainId } } }
+'
+
+# Paginate GraphQL results and build an object variable from nested fields
+$ portone api graphql --paginate --slurp \
+  -f storeId='<store-global-id>' \
+  -F 'filter[statuses][]=IN_PROGRESS' -F 'filter[cardCompanies][]' \
+  -f query='
+  query($storeId: ID!, $filter: PromotionFilterInput!, $endCursor: String) {
+    node(id: $storeId) {
+      ... on Store {
+        promotions(filter: $filter, first: 50, after: $endCursor) {
+          edges { node { id name status } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }'"#;
 
 #[derive(Debug, Args)]
 #[command(long_about = LONG_ABOUT, after_long_help = EXAMPLES)]
 pub struct ApiArgs {
-    #[arg(help = "Endpoint path or full URL for the PortOne V2 API")]
+    #[arg(help = "Endpoint path, full URL, or graphql for the GraphQL API")]
     pub endpoint: String,
 
     #[arg(
@@ -185,6 +218,12 @@ pub struct ApiArgs {
     pub auth: AuthOpts,
 }
 
+impl ApiArgs {
+    fn is_graphql(&self) -> bool {
+        self.endpoint == "graphql"
+    }
+}
+
 fn parse_duration(value: &str) -> Result<Duration, String> {
     humantime::parse_duration(value).map_err(|err| err.to_string())
 }
@@ -213,6 +252,7 @@ pub fn run(f: &mut Factory, args: ApiArgs) -> Result<(), CliError> {
         args.method.as_deref(),
         !params.is_empty() || input_body.is_some(),
         args.paginate,
+        args.is_graphql(),
     );
 
     let mut headers = request::parse_headers(&args.headers)?;
@@ -239,7 +279,7 @@ pub fn run(f: &mut Factory, args: ApiArgs) -> Result<(), CliError> {
         }
     };
 
-    let mut paginator = args.paginate.then(|| Paginator::new(&mut params));
+    let mut paginator = (args.paginate && !args.is_graphql()).then(|| Paginator::new(&mut params));
     let json_body = input_body.is_none() && !params.is_empty();
     request::apply_default_headers(&mut headers, json_body, None);
 
@@ -291,6 +331,7 @@ fn run_pages(
 ) -> Result<(), CliError> {
     let mut pipeline = output::Pipeline::new(args.jq.as_deref(), args.slurp, color, tty)?;
     let discard_body = args.silent || args.verbose;
+    let is_graphql = args.is_graphql();
     let mut first_page = true;
 
     loop {
@@ -302,6 +343,11 @@ fn run_pages(
             Some(input.to_vec())
         } else if params.is_empty() {
             None
+        } else if is_graphql {
+            Some(
+                serde_json::to_vec(&graphql::group_variables(params))
+                    .map_err(anyhow::Error::from)?,
+            )
         } else {
             Some(serde_json::to_vec(&*params).map_err(anyhow::Error::from)?)
         };
@@ -310,7 +356,15 @@ fn run_pages(
             verbose::log_request(out, method, url, &headers, body_bytes.as_deref())?;
         }
 
-        let resp = fetch(agent, cache, method, url, &headers, body_bytes.as_deref())?;
+        let resp = fetch(
+            agent,
+            cache,
+            method,
+            url,
+            &headers,
+            body_bytes.as_deref(),
+            is_graphql,
+        )?;
 
         if args.verbose {
             verbose::log_response(out, &resp)?;
@@ -326,9 +380,14 @@ fn run_pages(
         let mut server_error: Option<String> = None;
         if resp.status != 204 {
             let is_json = resp.is_json();
-            if is_json && !method.eq_ignore_ascii_case("HEAD") && resp.status >= 400 {
-                server_error = response::parse_error_message(&resp.body)
-                    .map(|msg| format!("{msg} (HTTP {})", resp.status));
+            if is_json && !method.eq_ignore_ascii_case("HEAD") {
+                if is_graphql {
+                    server_error = graphql::error_message(&resp.body);
+                }
+                if server_error.is_none() && resp.status >= 400 {
+                    server_error = response::parse_error_message(&resp.body)
+                        .map(|msg| format!("{msg} (HTTP {})", resp.status));
+                }
             }
 
             if !discard_body {
@@ -357,30 +416,55 @@ fn run_pages(
             return Err(CliError::Silent);
         }
 
-        match paginator.as_deref_mut() {
-            None => break,
-            Some(p) => {
-                if resp.status == 204 {
-                    break;
-                }
-                let parsed = if resp.is_json() {
-                    serde_json::from_slice::<Value>(&resp.body).ok()
-                } else {
-                    None
-                };
-                let Some(value) = parsed else {
-                    let _ = writeln!(
-                        err,
-                        "portone: cannot determine pagination scheme; stopping after first page"
-                    );
-                    break;
-                };
-                match p.advance(params, &value) {
-                    Advance::Next => {}
-                    Advance::Done => break,
-                    Advance::Stop(message) => {
-                        let _ = writeln!(err, "portone: {message}");
+        if is_graphql && args.paginate {
+            if resp.status == 204 {
+                break;
+            }
+            let cursor = if resp.is_json() {
+                serde_json::from_slice::<Value>(&resp.body)
+                    .ok()
+                    .as_ref()
+                    .and_then(graphql::find_end_cursor)
+            } else {
+                None
+            };
+            match cursor {
+                Some(cursor) => {
+                    if params.get("endCursor").and_then(Value::as_str) == Some(cursor.as_str()) {
+                        let _ =
+                            writeln!(err, "portone: pagination cursor did not advance; stopping");
                         break;
+                    }
+                    params.insert("endCursor".to_string(), Value::String(cursor));
+                }
+                None => break,
+            }
+        } else {
+            match paginator.as_deref_mut() {
+                None => break,
+                Some(p) => {
+                    if resp.status == 204 {
+                        break;
+                    }
+                    let parsed = if resp.is_json() {
+                        serde_json::from_slice::<Value>(&resp.body).ok()
+                    } else {
+                        None
+                    };
+                    let Some(value) = parsed else {
+                        let _ = writeln!(
+                            err,
+                            "portone: cannot determine pagination scheme; stopping after first page"
+                        );
+                        break;
+                    };
+                    match p.advance(params, &value) {
+                        Advance::Next => {}
+                        Advance::Done => break,
+                        Advance::Stop(message) => {
+                            let _ = writeln!(err, "portone: {message}");
+                            break;
+                        }
                     }
                 }
             }
@@ -394,8 +478,8 @@ fn run_pages(
     Ok(())
 }
 
-fn cacheable_method(method: &str) -> bool {
-    method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD")
+fn cacheable_method(method: &str, is_graphql: bool) -> bool {
+    is_graphql || method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD")
 }
 
 fn fetch(
@@ -405,6 +489,7 @@ fn fetch(
     url: &str,
     headers: &[(String, String)],
     body: Option<&[u8]>,
+    is_graphql: bool,
 ) -> Result<HttpResponse, CliError> {
     let key = cache.map(|_| {
         Cache::key(
@@ -424,13 +509,14 @@ fn fetch(
     let resp = request::send(agent, method, url, headers, body)?;
 
     if let (Some(cache), Some(key)) = (cache, &key) {
-        cache.store(key, cacheable_method(method), &resp.to_cached());
+        cache.store(key, cacheable_method(method, is_graphql), &resp.to_cached());
     }
     Ok(resp)
 }
 
 fn validate(args: &ApiArgs) -> Result<(), CliError> {
     if args.paginate
+        && !args.is_graphql()
         && args
             .method
             .as_deref()
@@ -526,11 +612,33 @@ mod tests {
     }
 
     #[test]
-    fn cacheable_method_allows_get_and_head() {
-        assert!(cacheable_method("GET"));
-        assert!(cacheable_method("get"));
-        assert!(cacheable_method("Head"));
-        assert!(!cacheable_method("POST"));
+    fn validate_allows_paginate_with_post_for_graphql() {
+        let mut args = base_args();
+        args.endpoint = "graphql".to_string();
+        args.paginate = true;
+        args.method = Some("post".to_string());
+        assert!(validate(&args).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_paginate_with_input_for_graphql() {
+        let mut args = base_args();
+        args.endpoint = "graphql".to_string();
+        args.paginate = true;
+        args.input = Some("body.json".to_string());
+        assert_eq!(
+            flag_message(validate(&args)),
+            "the `--paginate` option is not supported with `--input`"
+        );
+    }
+
+    #[test]
+    fn cacheable_method_allows_get_head_and_graphql() {
+        assert!(cacheable_method("GET", false));
+        assert!(cacheable_method("get", false));
+        assert!(cacheable_method("Head", false));
+        assert!(!cacheable_method("POST", false));
+        assert!(cacheable_method("POST", true));
     }
 
     #[test]
@@ -614,6 +722,39 @@ mod tests {
         mock.assert();
         assert_eq!(bufs.out(), r#"{"id":"pay-1"}"#);
         assert!(bufs.err().is_empty());
+    }
+
+    #[test]
+    fn run_escapes_graphql_error_controls_unless_explicitly_allowed() {
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST).path("/graphql");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"errors":[{"message":"\u001b]52;c;cHduZWQ=\u0007\u009b2Jhi"}]}"#);
+        });
+
+        for allow_escape in [false, true] {
+            let (io, bufs) = IoStreams::test();
+            let mut f = Factory::with_config(io, Config::default());
+            let mut args = base_args();
+            args.endpoint = "graphql".to_string();
+            args.raw_fields = vec!["query=query{x}".to_string()];
+            args.auth.base_url = Some(server.base_url());
+            args.headers = vec!["Authorization: Bearer test-token".to_string()];
+            args.allow_escape_sequences = allow_escape;
+
+            let result = run(&mut f, args);
+            assert!(matches!(result, Err(CliError::Silent)));
+            let err = bufs.err();
+            if allow_escape {
+                assert_eq!(err, "portone: \u{1b}]52;c;cHduZWQ=\u{7}\u{9b}2Jhi\n");
+            } else {
+                assert_eq!(err, "portone: \\u{1b}]52;c;cHduZWQ=\\u{7}\\u{9b}2Jhi\n");
+                assert!(!err.trim_end().chars().any(char::is_control));
+            }
+        }
+        mock.assert_calls(2);
     }
 
     #[test]

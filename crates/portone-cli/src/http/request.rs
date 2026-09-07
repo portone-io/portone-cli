@@ -5,10 +5,15 @@ use anyhow::{Context, anyhow};
 use crate::error::CliError;
 use crate::http::response::HttpResponse;
 
-pub fn resolve_method(explicit: Option<&str>, has_body: bool, paginate: bool) -> String {
+pub fn resolve_method(
+    explicit: Option<&str>,
+    has_body: bool,
+    paginate: bool,
+    graphql: bool,
+) -> String {
     match explicit {
         Some(method) => method.to_ascii_uppercase(),
-        None if has_body && !paginate => "POST".to_string(),
+        None if has_body && (graphql || !paginate) => "POST".to_string(),
         None => "GET".to_string(),
     }
 }
@@ -194,22 +199,32 @@ mod tests {
 
     #[test]
     fn method_defaults_to_get() {
-        assert_eq!(resolve_method(None, false, false), "GET");
+        assert_eq!(resolve_method(None, false, false, false), "GET");
     }
 
     #[test]
     fn method_switches_to_post_with_body() {
-        assert_eq!(resolve_method(None, true, false), "POST");
+        assert_eq!(resolve_method(None, true, false, false), "POST");
     }
 
     #[test]
     fn method_stays_get_with_body_when_paginating() {
-        assert_eq!(resolve_method(None, true, true), "GET");
+        assert_eq!(resolve_method(None, true, true, false), "GET");
+    }
+
+    #[test]
+    fn method_posts_for_graphql_even_when_paginating() {
+        assert_eq!(resolve_method(None, true, true, true), "POST");
+    }
+
+    #[test]
+    fn graphql_without_body_stays_get() {
+        assert_eq!(resolve_method(None, false, false, true), "GET");
     }
 
     #[test]
     fn explicit_method_is_uppercased() {
-        assert_eq!(resolve_method(Some("delete"), true, false), "DELETE");
+        assert_eq!(resolve_method(Some("delete"), true, false, false), "DELETE");
     }
 
     #[test]
