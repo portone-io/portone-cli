@@ -12,5 +12,7 @@ portone <COMMAND>
 | --- | --- |
 | [portone api](portone_api.md) | Make an authenticated PortOne V2 API request |
 | [portone auth](portone_auth.md) | Authenticate with PortOne |
+| [portone payment](portone_payment.md) | Inspect and manage payments |
+| [portone store](portone_store.md) | Configure the default store |
 | [portone setup](portone_setup.md) | Install PortOne plugins for AI coding assistants |
 | [portone completion](portone_completion.md) | Generate shell completion scripts |

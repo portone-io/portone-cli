@@ -30,6 +30,16 @@ fn english_help_preserves_clap_output_for_every_command() {
         vec!["auth", "logout"],
         vec!["auth", "status"],
         vec!["auth", "token"],
+        vec!["payment"],
+        vec!["payment", "list"],
+        vec!["payment", "view"],
+        vec!["payment", "transactions"],
+        vec!["payment", "cancel"],
+        vec!["payment", "webhook"],
+        vec!["payment", "webhook", "list"],
+        vec!["payment", "webhook", "resend"],
+        vec!["store"],
+        vec!["store", "set-default"],
         vec!["setup"],
         vec!["completion"],
     ] {
@@ -107,6 +117,50 @@ fn korean_help_preserves_shell_values_and_localizes_their_label() {
     );
     assert!(output.contains("<SHELL>"), "{output}");
     assert!(!output.contains("possible values"), "{output}");
+}
+
+#[test]
+fn payment_help_translates_reused_names_in_their_command_context() {
+    let payment = help("ko", &["payment", "list", "--help"]);
+    assert!(payment.contains("최근 결제 목록 조회"), "{payment}");
+    assert!(
+        payment.contains("PortOne 결제 버전으로 필터링"),
+        "{payment}"
+    );
+    assert!(payment.contains("결제 수단으로 필터링"), "{payment}");
+    assert!(payment.contains("[기본값: 30]"), "{payment}");
+    assert!(payment.contains("[가능한 값: v1, v2, all]"), "{payment}");
+    assert!(!payment.contains("버전 출력"), "{payment}");
+    assert!(!payment.contains("HTTP 메서드"), "{payment}");
+
+    let webhook = help("ko", &["payment", "webhook", "list", "--help"]);
+    assert!(webhook.contains("결제 웹훅 목록 조회"), "{webhook}");
+    assert!(webhook.contains("고객사가 지정한 결제 ID"), "{webhook}");
+    assert!(!webhook.contains("최근 결제 목록 조회"), "{webhook}");
+
+    let cancel = help("ko", &["payment", "cancel", "--help"]);
+    assert!(cancel.contains("취소 JSON 본문"), "{cancel}");
+    assert!(cancel.contains("최소 통화 단위"), "{cancel}");
+    assert!(cancel.contains("--json 필요"), "{cancel}");
+
+    let store = help("ko", &["store", "set-default", "--help"]);
+    assert!(store.contains("사용할 설정 프로필"), "{store}");
+    assert!(store.contains("저장된 기본 상점 ID 출력"), "{store}");
+    assert!(!store.contains("인증 정보를 저장할"), "{store}");
+}
+
+#[test]
+fn nested_payment_help_uses_the_selected_language() {
+    for language in ["en", "ko"] {
+        let direct = help(language, &["payment", "webhook", "list", "--help"]);
+        for args in [
+            vec!["help", "payment", "webhook", "list"],
+            vec!["payment", "help", "webhook", "list"],
+            vec!["payment", "webhook", "help", "list"],
+        ] {
+            assert_eq!(help(language, &args), direct, "{language}: {args:?}");
+        }
+    }
 }
 
 #[test]

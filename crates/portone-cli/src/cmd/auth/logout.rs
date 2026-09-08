@@ -76,6 +76,7 @@ mod tests {
             "default".to_string(),
             Profile {
                 base_url: None,
+                store_id: None,
                 oauth: Some(OAuthProfile {
                     storage: Storage::Keyring,
                     client_id: "CLI".to_string(),

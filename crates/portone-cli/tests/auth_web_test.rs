@@ -97,11 +97,30 @@ fn probe_mock<'a>(server: &'a MockServer, typename: &str) -> httpmock::Mock<'a> 
     server.mock(move |when, then| {
         when.method(POST)
             .path("/graphql")
-            .header("authorization", "Bearer access-1");
+            .header("authorization", "Bearer access-1")
+            .json_body(json!({
+                "query": "query { merchant { __typename ... on Merchant { plainId } } }"
+            }));
         then.status(200).json_body(json!({
             "data": { "merchant": { "__typename": typename, "plainId": "merchant-1" } }
         }));
     })
+}
+
+fn stores_mock<'a>(server: &'a MockServer, response: serde_json::Value) -> httpmock::Mock<'a> {
+    server.mock(move |when, then| {
+        when.method(POST)
+            .path("/graphql")
+            .header("authorization", "Bearer access-1")
+            .body_includes("CliLoginStores");
+        then.status(200).json_body(response);
+    })
+}
+
+fn stores_response(items: serde_json::Value) -> serde_json::Value {
+    json!({"data":{"merchant":{"__typename":"Merchant","stores":{
+        "__typename":"StoresPayload","items":items
+    }}}})
 }
 
 #[test]
@@ -133,6 +152,13 @@ fn login_web_no_browser_stores_tokens_in_file() {
         }));
     });
     let probe = probe_mock(&server, "Merchant");
+    let stores = stores_mock(
+        &server,
+        stores_response(json!([
+            {"id":"global-child","plainId":"store-child","name":"Child","isRepresentative":false},
+            {"id":"global-main","plainId":"store-main","name":"Main","isRepresentative":true}
+        ])),
+    );
 
     let (child, mut reader) = spawn_login(
         dir.path(),
@@ -170,11 +196,17 @@ fn login_web_no_browser_stores_tokens_in_file() {
     assert!(stderr.contains("Storage: config file"), "{stderr}");
     token.assert();
     probe.assert();
+    stores.assert();
+    assert!(
+        stderr.contains("Main (store-main) [representative]"),
+        "{stderr}"
+    );
 
     let path = dir.path().join("config.toml");
     let contents = std::fs::read_to_string(&path).unwrap();
     for expected in [
         "default_profile = \"default\"",
+        "store_id = \"store-main\"",
         &format!("base_url = \"{}\"", server.base_url()),
         "storage = \"file\"",
         "client_id = \"CLI\"",
@@ -195,6 +227,103 @@ fn login_web_no_browser_stores_tokens_in_file() {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+}
+
+#[test]
+fn login_selects_store_or_leaves_it_unset_without_interrupting_authentication() {
+    let multiple = json!([
+        {"plainId":"store-child","name":"Child","isRepresentative":false},
+        {"plainId":"store-main","name":"Main","isRepresentative":true}
+    ]);
+    let no_representative = json!([
+        {"plainId":"store-one","name":"One","isRepresentative":false},
+        {"plainId":"store-two","name":"Two","isRepresentative":false}
+    ]);
+    let denied = json!({"data":{"merchant":{"__typename":"Merchant","stores":{
+        "__typename":"ForbiddenError","message":"STORE_READ required"
+    }}}});
+    for (previous, response, expected, warning) in [
+        (
+            Some("store-child"),
+            stores_response(multiple.clone()),
+            Some("store-child"),
+            false,
+        ),
+        (
+            Some("store-deleted"),
+            stores_response(multiple),
+            Some("store-main"),
+            false,
+        ),
+        (
+            None,
+            stores_response(
+                json!([{"plainId":"store-only","name":"Only","isRepresentative":false}]),
+            ),
+            Some("store-only"),
+            false,
+        ),
+        (
+            Some("store-deleted"),
+            stores_response(no_representative),
+            None,
+            false,
+        ),
+        (Some("store-child"), denied, None, true),
+        (None, stores_response(json!([])), None, false),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let server = MockServer::start();
+        let port = free_port();
+        if let Some(previous) = previous {
+            std::fs::write(dir.path().join("config.toml"), format!(
+                "default_profile = \"default\"\n[profiles.default]\nstore_id = \"{previous}\"\n\
+                 [profiles.default.oauth]\nstorage = \"file\"\nclient_id = \"CLI\"\n\
+                 token_url = \"https://issuer.example/token\"\nconsole_url = \"https://console.example\"\n\
+                 [profiles.default.oauth.tokens]\naccess_token = \"stale-token\"\nexpires_at = 4000000000\n"
+            )).unwrap();
+        }
+        let token = server.mock(|when, then| {
+            when.method(POST).path("/oauth/token");
+            then.status(200).json_body(json!({
+                "access_token":"access-1","token_type":"Bearer","expires_in":1800,
+                "scope":["TX_READ","STORE_READ","MERCHANT_READ"],"refresh_token":"refresh-1"
+            }));
+        });
+        let probe = probe_mock(&server, "Merchant");
+        let stores = stores_mock(&server, response);
+        let (child, mut reader) = spawn_login(dir.path(), &server, port, &[]);
+        let params: HashMap<String, String> = read_authorize_url(&mut reader)
+            .query_pairs()
+            .into_owned()
+            .collect();
+        assert_eq!(
+            callback(port, &format!("code=abc&state={}", params["state"])).0,
+            200
+        );
+        let (ok, stderr) = finish(child, &mut reader);
+        assert!(ok, "{stderr}");
+        let saved: toml::Value =
+            toml::from_str(&std::fs::read_to_string(dir.path().join("config.toml")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved["profiles"]["default"]
+                .get("store_id")
+                .and_then(toml::Value::as_str),
+            expected,
+            "{stderr}"
+        );
+        assert_eq!(
+            saved["profiles"]["default"]["oauth"]["tokens"]["access_token"].as_str(),
+            Some("access-1")
+        );
+        if warning {
+            assert!(stderr.contains("STORE_READ required"), "{stderr}");
+        }
+        token.assert();
+        probe.assert();
+        stores.assert();
     }
 }
 

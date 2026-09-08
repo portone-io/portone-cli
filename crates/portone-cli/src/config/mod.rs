@@ -22,6 +22,8 @@ pub struct Profile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OAuthProfile>,
 }
 
@@ -152,6 +154,7 @@ mod tests {
             "default".to_string(),
             Profile {
                 base_url: None,
+                store_id: None,
                 oauth: None,
             },
         );
@@ -159,6 +162,7 @@ mod tests {
             "staging".to_string(),
             Profile {
                 base_url: Some("https://api.example.test".to_string()),
+                store_id: Some("store-staging".to_string()),
                 oauth: None,
             },
         );
@@ -183,6 +187,13 @@ mod tests {
             assert!(config.default_profile.is_none());
             assert!(config.profiles.is_empty());
         });
+    }
+
+    #[test]
+    fn profiles_without_store_id_remain_compatible() {
+        let config: Config =
+            toml::from_str("[profiles.default]\nbase_url = 'https://api.example'\n").unwrap();
+        assert!(config.profiles["default"].store_id.is_none());
     }
 
     #[test]
@@ -256,6 +267,7 @@ mod tests {
                 "console".to_string(),
                 Profile {
                     base_url: Some("https://api.example".to_string()),
+                    store_id: None,
                     oauth: Some(oauth_profile(Storage::Keyring, None)),
                 },
             );
@@ -287,6 +299,7 @@ mod tests {
                 "console".to_string(),
                 Profile {
                     base_url: None,
+                    store_id: None,
                     oauth: Some(oauth_profile(Storage::File, Some(tokens))),
                 },
             );

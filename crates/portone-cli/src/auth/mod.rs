@@ -2,6 +2,7 @@ pub mod browser;
 pub mod callback;
 pub mod oauth;
 pub mod store;
+pub mod store_discovery;
 
 use std::io::Write;
 
@@ -376,6 +377,7 @@ mod tests {
             "default".to_string(),
             Profile {
                 base_url: Some(base_url.to_string()),
+                store_id: None,
                 oauth: None,
             },
         );
@@ -413,6 +415,7 @@ mod tests {
             "default".to_string(),
             Profile {
                 base_url: None,
+                store_id: None,
                 oauth: Some(oauth_profile(storage, token_url, tokens)),
             },
         );

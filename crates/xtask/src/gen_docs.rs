@@ -205,7 +205,14 @@ fn option_syntax(arg: &Arg) -> String {
         let _ = write!(syntax, "--{long}");
     }
     if arg.get_action().takes_values() {
-        let _ = write!(syntax, " <{}>", value_name(arg));
+        if arg
+            .get_num_args()
+            .is_some_and(|range| range.min_values() == 0)
+        {
+            let _ = write!(syntax, " [<{}>]", value_name(arg));
+        } else {
+            let _ = write!(syntax, " <{}>", value_name(arg));
+        }
     }
     syntax
 }
@@ -263,7 +270,17 @@ mod tests {
                 "portone_auth_status.md",
                 "portone_auth_token.md",
                 "portone_completion.md",
+                "portone_payment.md",
+                "portone_payment_cancel.md",
+                "portone_payment_list.md",
+                "portone_payment_transactions.md",
+                "portone_payment_view.md",
+                "portone_payment_webhook.md",
+                "portone_payment_webhook_list.md",
+                "portone_payment_webhook_resend.md",
                 "portone_setup.md",
+                "portone_store.md",
+                "portone_store_set-default.md",
             ]
         );
     }
@@ -285,6 +302,24 @@ mod tests {
         assert!(api.contains("`--profile <NAME>`"));
         assert!(api.contains("`<ENDPOINT>`"));
         assert!(!api.contains("--help"));
+    }
+
+    #[test]
+    fn nested_payment_pages_include_full_paths_and_inherited_options() {
+        let pages = render_all();
+        let webhook = &pages["portone_payment_webhook_resend.md"];
+        assert!(
+            webhook.contains("portone payment webhook resend [OPTIONS] <PAYMENT_ID>"),
+            "{webhook}"
+        );
+        assert!(webhook.contains("`--webhook-id <WEBHOOK_ID>`"));
+        assert!(webhook.contains("`--store <STORE_ID>`"));
+        assert!(webhook.contains("`--profile <NAME>`"));
+        assert!(webhook.contains("`--json [<FIELDS>]`"));
+        assert!(webhook.contains("[portone payment webhook](portone_payment_webhook.md)"));
+        let list = &pages["portone_payment_list.md"];
+        assert!(list.contains("`--version <VERSION>`"));
+        assert!(list.contains("`-L, --limit <LIMIT>`"));
     }
 
     #[test]

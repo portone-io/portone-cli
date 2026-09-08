@@ -7,6 +7,7 @@ use clap::Args;
 use crate::auth::callback::{Callback, CallbackServer};
 use crate::auth::oauth::{self, OAuthConfig};
 use crate::auth::store::{self, KEYRING_SERVICE, SecretStore, StoreError};
+use crate::auth::store_discovery::{self, StoreSummary};
 use crate::auth::{self, browser};
 use crate::config::{Config, OAuthProfile, OAuthTokens, Storage};
 use crate::error::CliError;
@@ -137,6 +138,17 @@ fn login_oauth(
             )))
         })?;
 
+    let previous_store = config
+        .profiles
+        .get(profile_name)
+        .and_then(|profile| profile.store_id.as_deref());
+    let selected_store = select_login_store(f, &base_url, &tokens.access_token, previous_store);
+    config
+        .profiles
+        .entry(profile_name.to_string())
+        .or_default()
+        .store_id = selected_store.as_ref().map(|store| store.plain_id.clone());
+
     let store = f.secret_store();
     let stored = store_web_login(
         store.as_ref(),
@@ -160,6 +172,15 @@ fn login_oauth(
         "{}",
         crate::tr!(localizer, "auth-login-stored", profile = profile_name)
     );
+    let store_message = match selected_store {
+        Some(store) => crate::tr!(
+            localizer,
+            "auth-login-store-selected",
+            store = store.label(&localizer)
+        ),
+        None => crate::tr!(localizer, "auth-login-store-unset"),
+    };
+    let _ = writeln!(f.io.err, "{store_message}");
     let location = match (stored.storage, stored.credential_id.as_deref()) {
         (Storage::Keyring, Some(id)) => crate::tr!(
             localizer,
@@ -175,6 +196,42 @@ fn login_oauth(
         crate::tr!(localizer, "auth-storage", location = location)
     );
     Ok(())
+}
+
+fn select_login_store(
+    f: &mut Factory,
+    base_url: &str,
+    access_token: &str,
+    previous: Option<&str>,
+) -> Option<StoreSummary> {
+    let localizer = f.localizer.clone();
+    let result = store_discovery::discover(&f.agent(), base_url, access_token)
+        .map_err(CliError::from)
+        .and_then(|stores| {
+            if let Some(store) = store_discovery::preferred_store(&stores, previous) {
+                return Ok(Some(store.clone()));
+            }
+            if !stores.is_empty() && f.io.can_prompt() {
+                return store_discovery::pick_store(&stores, previous, true, &localizer);
+            }
+            Ok(None)
+        });
+    match result {
+        Ok(store) => store,
+        Err(error) => {
+            let error = match error {
+                CliError::Other(error) => localizer.format_error(&error),
+                CliError::Flag(error) => error,
+                CliError::Silent => return None,
+            };
+            let _ = writeln!(
+                f.io.err,
+                "{}",
+                crate::tr!(localizer, "auth-login-store-unavailable", error = error)
+            );
+            None
+        }
+    }
 }
 
 pub(crate) struct StoredLogin {
@@ -325,6 +382,7 @@ mod tests {
             "default".to_string(),
             Profile {
                 base_url: None,
+                store_id: None,
                 oauth: Some(OAuthProfile {
                     storage: Storage::Keyring,
                     client_id: "MCP".to_string(),

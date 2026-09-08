@@ -1,13 +1,13 @@
 ---
 name: portone-cli
-description: Use the PortOne CLI for non-interactive authentication and PortOne V2 REST or GraphQL requests, including typed fields, pagination, jq filtering, caching, output handling, and schema discovery.
+description: Use the PortOne CLI for authentication, payment inspection and management, and PortOne V2 REST or GraphQL requests, including pagination, JSON output, jq filtering, and schema discovery.
 ---
 
 # Using `portone`
 
-`portone` provides authenticated PortOne V2 REST and GraphQL requests through
-`portone api`. It is safe to call from an agent or CI environment: API commands
-never prompt, and non-TTY output disables color and paging automatically.
+`portone` provides payment commands and authenticated PortOne V2 REST and
+GraphQL requests. Non-TTY output disables color and paging automatically.
+`portone api` never prompts; `payment cancel` requires `--yes` without a TTY.
 
 ## Non-interactive behavior
 
@@ -49,7 +49,10 @@ portone auth logout
 
 Login stores tokens in the OS keyring, or in the config file when
 `--insecure-storage` is passed or the keyring is unavailable. Stored access
-tokens refresh automatically. `auth token` prints a fresh access token for
+tokens refresh automatically. First login also selects the representative
+store as the profile's default when available. Reauthentication retains an
+accessible existing default; store discovery failure still permits login.
+`auth token` prints a fresh access token for
 another tool, for example:
 
 ```bash
@@ -63,10 +66,49 @@ Pass `-H 'Authorization: ...'` to override built-in authentication. When an
 endpoint is a full URL with a different origin from the base URL, the CLI does
 not attach Authorization.
 
+## Payments and default stores
+
+Use the singular `payment` command for common payment workflows:
+
+```bash
+portone payment list --test --status failed --limit 20 --json
+portone payment view payment-xxx --json
+portone payment transactions payment-xxx --json
+portone payment webhook list payment-xxx --json
+portone payment cancel payment-xxx --reason 'Customer request' --yes --json
+portone payment webhook resend payment-xxx --webhook-id webhook-xxx --json
+```
+
+The payment ID is the merchant-specified ID, not a PortOne or PG transaction
+ID. Search transaction IDs using `payment list --search TEXT`.
+
+- Store precedence is `--store`, `PORTONE_STORE_ID`, the selected profile's
+  `store_id`, then the API default. `payment list --all-stores` omits the store
+  filter and conflicts with `--store`.
+- Use `store set-default store-xxx --profile NAME` to set a profile default
+  without a prompt; `--view` prints the stored ID and `--unset` removes it.
+  This does not change the merchant's representative store in PortOne.
+- `payment list` defaults to V2, test and live payments, the most recent 90
+  days by status change, newest first, and 30 results. `--limit/-L` sets the
+  final result count (1 to 60,000); pagination is handled automatically.
+- `--from` and `--until` accept RFC3339 timestamps. Use `--status`, `--method`,
+  `--pg`, `--currency`, `--test` or `--live`, and `--version` for filters.
+- Use `--json` for full structured output, `--json id,status` to select
+  top-level fields, and `--json --jq '.[] | .id'` to filter it. `--jq/-q`
+  requires `--json`. List commands emit arrays; detail and action commands
+  emit objects. Without `--json`, non-TTY lists emit headerless TSV.
+- Cancellation amounts are integers in the currency's minor unit. Omitting
+  `--amount` cancels the full remaining amount. Complex cancellation inputs,
+  including refund accounts, use `--input FILE|-` instead of individual
+  cancellation field flags; the JSON must contain a reason.
+- Cancellation `REQUESTED` means accepted and `SUCCEEDED` means completed;
+  both exit 0, while `FAILED` exits 1. A successful request may still be pending.
+- Webhook resend omits confirmation. Omitting `--webhook-id` selects the latest
+  webhook through the API. A reported delivery failure exits 1.
+
 ## REST requests
 
-`portone api` is the only command that sends API requests; there are no typed
-resource commands such as `payments list`.
+Use `portone api` for endpoints and fields beyond the payment command surface.
 
 ```bash
 portone api /payments/{paymentId}
@@ -149,7 +191,7 @@ iterated manually. GraphQL requests always use POST and may be cached.
 
 ## Output and caching
 
-- Non-TTY JSON is emitted with the server's bytes unchanged.
+- `portone api` emits non-TTY JSON with the server's bytes unchanged.
 - `-q/--jq` uses embedded jaq. Most jq syntax works, but some built-ins may be
   unavailable or differ slightly.
 - Only one of `--jq`, `--silent`, or `--verbose` may be used. `--include` adds

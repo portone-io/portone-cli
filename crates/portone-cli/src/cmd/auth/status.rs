@@ -241,6 +241,7 @@ mod tests {
                     "default".to_string(),
                     Profile {
                         base_url: Some(server.base_url()),
+                        store_id: None,
                         oauth: Some(OAuthProfile {
                             storage: Storage::File,
                             client_id: "CLI".to_string(),

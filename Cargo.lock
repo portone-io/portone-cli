@@ -2084,7 +2084,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "time",
  "toml 1.1.4+spec-1.1.0",
+ "unicode-width",
  "ureq",
  "url",
 ]

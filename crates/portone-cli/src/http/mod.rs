@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod client;
 pub mod pagination;
 pub mod request;
 pub mod response;

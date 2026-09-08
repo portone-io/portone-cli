@@ -12,13 +12,24 @@ use crate::i18n::Localizer;
 pub fn command(localizer: &Localizer) -> Command {
     let mut command = super::Cli::command();
     command.build();
-    localize_command(command, localizer)
+    localize_command(command, "", localizer)
 }
 
-fn localize_command(mut command: Command, localizer: &Localizer) -> Command {
+fn command_path(parent: &str, name: &str) -> String {
+    // Clap's generated help subtree mirrors the real commands without arguments.
+    let parent = parent.strip_suffix(" help").unwrap_or(parent);
+    if parent.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent} {name}")
+    }
+}
+
+fn localize_command(mut command: Command, parent: &str, localizer: &Localizer) -> Command {
     let name = command.get_name().to_string();
+    let path = command_path(parent, &name);
     if command.get_about().is_some()
-        && let Some(about) = about(&name, localizer)
+        && let Some(about) = about(&path, localizer)
     {
         command = command.about(about);
     }
@@ -37,35 +48,56 @@ fn localize_command(mut command: Command, localizer: &Localizer) -> Command {
             ));
     }
     command
-        .mut_args(|arg| localize_arg(arg, &name, localizer))
-        .mut_subcommands(|subcommand| localize_command(subcommand, localizer))
+        .mut_args(|arg| localize_arg(arg, &path, localizer))
+        .mut_subcommands(|subcommand| localize_command(subcommand, &path, localizer))
 }
 
-fn about(name: &str, localizer: &Localizer) -> Option<String> {
-    Some(match name {
+fn about(path: &str, localizer: &Localizer) -> Option<String> {
+    Some(match path {
         "portone" => crate::tr!(localizer, "help-about-portone"),
-        "api" => crate::tr!(localizer, "help-about-api"),
-        "auth" => crate::tr!(localizer, "help-about-auth"),
-        "login" => crate::tr!(localizer, "help-about-login"),
-        "logout" => crate::tr!(localizer, "help-about-logout"),
-        "status" => crate::tr!(localizer, "help-about-status"),
-        "token" => crate::tr!(localizer, "help-about-token"),
-        "setup" => crate::tr!(localizer, "help-about-setup"),
-        "completion" => crate::tr!(localizer, "help-about-completion"),
-        "help" => crate::tr!(localizer, "help-about-help"),
+        "portone api" => crate::tr!(localizer, "help-about-api"),
+        "portone auth" => crate::tr!(localizer, "help-about-auth"),
+        "portone auth login" => crate::tr!(localizer, "help-about-login"),
+        "portone auth logout" => crate::tr!(localizer, "help-about-logout"),
+        "portone auth status" => crate::tr!(localizer, "help-about-status"),
+        "portone auth token" => crate::tr!(localizer, "help-about-token"),
+        "portone payment" => crate::tr!(localizer, "help-about-payment"),
+        "portone payment list" => crate::tr!(localizer, "help-about-payment-list"),
+        "portone payment view" => crate::tr!(localizer, "help-about-payment-view"),
+        "portone payment transactions" => crate::tr!(localizer, "help-about-payment-transactions"),
+        "portone payment cancel" => crate::tr!(localizer, "help-about-payment-cancel"),
+        "portone payment webhook" => crate::tr!(localizer, "help-about-payment-webhook"),
+        "portone payment webhook list" => crate::tr!(localizer, "help-about-payment-webhook-list"),
+        "portone payment webhook resend" => {
+            crate::tr!(localizer, "help-about-payment-webhook-resend")
+        }
+        "portone store" => crate::tr!(localizer, "help-about-store"),
+        "portone store set-default" => crate::tr!(localizer, "help-about-store-set-default"),
+        "portone setup" => crate::tr!(localizer, "help-about-setup"),
+        "portone completion" => crate::tr!(localizer, "help-about-completion"),
+        path if path.ends_with(" help") => crate::tr!(localizer, "help-about-help"),
         _ => return None,
     })
 }
 
 fn arg_help(arg: &Arg, owner: &str, localizer: &Localizer) -> Option<String> {
+    if owner.starts_with("portone payment")
+        && let Some(help) = payment_arg_help(arg.get_id().as_str(), localizer)
+    {
+        return Some(help);
+    }
     Some(match arg.get_id().as_str() {
         "help" if arg.get_long_help().is_some() => {
             crate::tr!(localizer, "help-flag-help-short")
         }
         "help" => crate::tr!(localizer, "help-flag-help"),
         "version" => crate::tr!(localizer, "help-flag-version"),
-        "profile" if owner == "login" => crate::tr!(localizer, "help-profile-store"),
-        "profile" if owner == "logout" => crate::tr!(localizer, "help-profile-remove"),
+        "profile" if owner == "portone auth login" => {
+            crate::tr!(localizer, "help-profile-store")
+        }
+        "profile" if owner == "portone auth logout" => {
+            crate::tr!(localizer, "help-profile-remove")
+        }
         "profile" => crate::tr!(localizer, "help-profile-use"),
         "base_url" => crate::tr!(localizer, "help-base-url"),
         "endpoint" => crate::tr!(localizer, "help-endpoint"),
@@ -89,7 +121,46 @@ fn arg_help(arg: &Arg, owner: &str, localizer: &Localizer) -> Option<String> {
         "allow_dirty" => crate::tr!(localizer, "help-allow-dirty"),
         "assistant" => crate::tr!(localizer, "help-assistant"),
         "shell" => crate::tr!(localizer, "help-shell"),
-        "subcommand" if owner == "help" => crate::tr!(localizer, "help-subcommand"),
+        "id" if owner == "portone store set-default" => crate::tr!(localizer, "help-store-id"),
+        "view" if owner == "portone store set-default" => crate::tr!(localizer, "help-store-view"),
+        "unset" if owner == "portone store set-default" => {
+            crate::tr!(localizer, "help-store-unset")
+        }
+        "subcommand" if owner.ends_with(" help") => crate::tr!(localizer, "help-subcommand"),
+        _ => return None,
+    })
+}
+
+fn payment_arg_help(id: &str, localizer: &Localizer) -> Option<String> {
+    Some(match id {
+        "store" => crate::tr!(localizer, "help-payment-store"),
+        "payment_id" => crate::tr!(localizer, "help-payment-id"),
+        "json" => crate::tr!(localizer, "help-resource-json"),
+        "jq" => crate::tr!(localizer, "help-resource-jq"),
+        "limit" => crate::tr!(localizer, "help-payment-limit"),
+        "status" => crate::tr!(localizer, "help-payment-status"),
+        "method" => crate::tr!(localizer, "help-payment-method"),
+        "pg" => crate::tr!(localizer, "help-payment-pg"),
+        "currency" => crate::tr!(localizer, "help-payment-currency"),
+        "test" => crate::tr!(localizer, "help-payment-test"),
+        "live" => crate::tr!(localizer, "help-payment-live"),
+        "version" => crate::tr!(localizer, "help-payment-version"),
+        "from" => crate::tr!(localizer, "help-payment-from"),
+        "until" => crate::tr!(localizer, "help-payment-until"),
+        "time_field" => crate::tr!(localizer, "help-payment-time-field"),
+        "sort" => crate::tr!(localizer, "help-payment-sort"),
+        "order" => crate::tr!(localizer, "help-payment-order"),
+        "search" => crate::tr!(localizer, "help-payment-search"),
+        "search_field" => crate::tr!(localizer, "help-payment-search-field"),
+        "all_stores" => crate::tr!(localizer, "help-payment-all-stores"),
+        "reason" => crate::tr!(localizer, "help-payment-cancel-reason"),
+        "amount" => crate::tr!(localizer, "help-payment-cancel-amount"),
+        "tax_free_amount" => crate::tr!(localizer, "help-payment-cancel-tax-free"),
+        "vat_amount" => crate::tr!(localizer, "help-payment-cancel-vat"),
+        "current_cancellable_amount" => crate::tr!(localizer, "help-payment-cancel-current"),
+        "input" => crate::tr!(localizer, "help-payment-cancel-input"),
+        "yes" => crate::tr!(localizer, "help-payment-cancel-yes"),
+        "webhook_id" => crate::tr!(localizer, "help-payment-webhook-id"),
         _ => return None,
     })
 }
@@ -177,10 +248,19 @@ fn metadata(arg: &Arg, localizer: &Localizer) -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn assert_metadata_matches(source: &Command, translated: &Command, localizer: &Localizer) {
+    fn assert_metadata_matches(
+        source: &Command,
+        translated: &Command,
+        parent: &str,
+        localizer: &Localizer,
+    ) {
         assert_eq!(source.get_name(), translated.get_name());
+        let path = command_path(parent, source.get_name());
         if source.get_about().is_some() {
-            assert!(about(source.get_name(), localizer).is_some());
+            assert!(
+                about(&path, localizer).is_some(),
+                "missing translation for {path}"
+            );
         }
         assert_eq!(source.get_about(), translated.get_about());
         assert_eq!(source.get_long_about(), translated.get_long_about());
@@ -190,7 +270,7 @@ mod tests {
         );
         for arg in source.get_arguments() {
             assert!(
-                arg_help(arg, source.get_name(), localizer).is_some(),
+                arg_help(arg, &path, localizer).is_some(),
                 "missing translation for {} {}",
                 source.get_name(),
                 arg.get_id()
@@ -206,6 +286,7 @@ mod tests {
             assert_metadata_matches(
                 subcommand,
                 translated.find_subcommand(subcommand.get_name()).unwrap(),
+                &path,
                 localizer,
             );
         }
@@ -216,7 +297,7 @@ mod tests {
         let localizer = Localizer::english();
         let mut original = super::super::Cli::command();
         original.build();
-        assert_metadata_matches(&original, &command(&localizer), &localizer);
+        assert_metadata_matches(&original, &command(&localizer), "", &localizer);
     }
 
     #[test]

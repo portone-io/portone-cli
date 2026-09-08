@@ -19,6 +19,11 @@ pub fn run(f: &mut Factory, args: CompletionArgs) -> Result<(), CliError> {
     let mut cmd = crate::cmd::help::command(&Localizer::english());
     cmd.set_bin_name("portone");
     cmd.build();
-    args.shell.try_generate(&cmd, &mut f.io.out)?;
+    if args.shell == Shell::Fish {
+        fish::generate(&cmd, &mut f.io.out)?;
+    } else {
+        args.shell.try_generate(&cmd, &mut f.io.out)?;
+    }
     Ok(())
 }
+mod fish;

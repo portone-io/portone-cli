@@ -8,6 +8,8 @@ pub struct IoStreams {
     pub out: Box<dyn Write>,
     pub err: Box<dyn Write>,
     pub stdout_is_tty: bool,
+    pub stdin_is_tty: bool,
+    pub stderr_is_tty: bool,
     no_color: bool,
     color_forced: bool,
 }
@@ -18,6 +20,8 @@ impl IoStreams {
             out: Box::new(std::io::stdout()),
             err: Box::new(std::io::stderr()),
             stdout_is_tty: std::io::stdout().is_terminal(),
+            stdin_is_tty: std::io::stdin().is_terminal(),
+            stderr_is_tty: std::io::stderr().is_terminal(),
             no_color: std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()),
             color_forced: std::env::var_os("CLICOLOR_FORCE")
                 .is_some_and(|v| !v.is_empty() && v != "0"),
@@ -33,6 +37,8 @@ impl IoStreams {
             out: Box::new(buffers.out.clone()),
             err: Box::new(buffers.err.clone()),
             stdout_is_tty: false,
+            stdin_is_tty: false,
+            stderr_is_tty: false,
             no_color: false,
             color_forced: false,
         };
@@ -41,6 +47,10 @@ impl IoStreams {
 
     pub fn color_enabled(&self) -> bool {
         self.color_forced || (self.stdout_is_tty && !self.no_color)
+    }
+
+    pub fn can_prompt(&self) -> bool {
+        self.stdin_is_tty && self.stderr_is_tty
     }
 }
 
@@ -82,6 +92,8 @@ mod tests {
             out: Box::new(Vec::new()),
             err: Box::new(Vec::new()),
             stdout_is_tty,
+            stdin_is_tty: false,
+            stderr_is_tty: false,
             no_color,
             color_forced,
         }

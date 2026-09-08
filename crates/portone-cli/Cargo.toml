@@ -34,7 +34,9 @@ keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["arbitrary_precision", "preserve_order"] }
 sha2 = "0.11.0"
+time = { version = "0.3.55", features = ["parsing", "formatting"] }
 toml = "1.1.4"
+unicode-width = "0.2.2"
 ureq = { version = "3.4.0", features = ["json", "platform-verifier"] }
 url = "2.5.8"
 

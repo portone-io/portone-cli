@@ -4,9 +4,10 @@
 [![license](https://img.shields.io/github/license/portone-io/portone-cli)](https://github.com/portone-io/portone-cli/blob/main/LICENSE)
 
 PortOne CLI helps you integrate PortOne payments and identity verification. It
-provides authenticated PortOne V2 API requests (`portone api`), authentication
-management (`portone auth`), and PortOne plugin setup for Claude Code and Codex
-(`portone setup`).
+provides payment search, inspection, cancellation, and webhook management
+(`portone payment`), authenticated PortOne V2 API requests (`portone api`),
+authentication management (`portone auth`), and PortOne plugin setup for Claude
+Code and Codex (`portone setup`).
 
 - Repository: <https://github.com/portone-io/portone-cli>
 - Issues: <https://github.com/portone-io/portone-cli/issues>
@@ -93,7 +94,12 @@ portone auth token                # Print the current access token, refreshing i
 portone auth logout               # Remove local credentials without revoking the token
 ```
 
-`login` validates the issued token before saving it.
+`login` validates the issued token before saving it. On first login, it also
+selects the merchant's representative store as the profile's default store and
+prints its name and ID. Reauthenticating retains a previously selected default
+when it is still accessible. If no representative store is available, a sole
+accessible store is selected automatically; multiple stores can be selected
+interactively or skipped. Failure to discover stores does not prevent login.
 
 ### Console login
 
@@ -151,6 +157,7 @@ default_profile = "default"
 
 [profiles.default]
 base_url = "https://api.portone.io"
+store_id = "store-xxx"
 
 [profiles.default.oauth]
 storage = "keyring"          # Tokens are stored as portone-cli/<credential_id>
@@ -163,6 +170,101 @@ console_url = "https://admin.portone.io"
 The login environment can be overridden with `PORTONE_CONSOLE_URL`,
 `PORTONE_MERCHANT_SERVICE_URL`, `PORTONE_OAUTH_CLIENT_ID`, and
 `PORTONE_OAUTH_REDIRECT_URI`. These variables only affect login.
+
+## `portone store`
+
+Manage the default store saved in a profile:
+
+```bash
+portone store set-default                    # Select an accessible store
+portone store set-default store-xxx          # Save an ID directly
+portone store set-default --profile staging --view
+portone store set-default --unset
+```
+
+The selector shows store names and IDs with the representative store first.
+This changes only the CLI profile, not the representative store configured in
+PortOne. `--view` displays the stored value, without environment overrides.
+
+## `portone payment`
+
+Search payments, inspect failures and payment attempts, cancel payments, and
+inspect or resend webhooks:
+
+```bash
+portone payment list --test --status failed --limit 20
+portone payment view payment-xxx
+portone payment transactions payment-xxx
+portone payment webhook list payment-xxx
+portone payment cancel payment-xxx --reason 'Customer request'
+portone payment cancel payment-xxx --amount 1000 --reason 'Partial refund' --yes
+portone payment webhook resend payment-xxx --webhook-id webhook-xxx
+```
+
+Payment IDs are the IDs assigned by your integration. Use `list --search TEXT`
+to find a payment by its PortOne or PG transaction ID.
+
+### Store and search defaults
+
+Store selection follows `--store`, `PORTONE_STORE_ID`, the profile's `store_id`,
+then the API default. `payment list --all-stores` ignores the environment and
+profile defaults and omits the store filter. It cannot be combined with
+`--store`; the accessible result range depends on the token.
+
+`payment list` returns the newest 30 V2 payments changed within the past 90
+days, including both test and live payments. `--limit/-L` sets the final number
+of results from 1 to 60,000, with pages fetched automatically.
+
+```bash
+portone payment list --live --status paid,partial-cancelled --currency KRW
+portone payment list --method card --pg tosspayments --version all
+portone payment list --from 2026-09-01T00:00:00+09:00 --until 2026-09-08T00:00:00+09:00
+portone payment list --search payment-xxx --search-field payment-id
+```
+
+Use `--time-field created-at|status-changed-at` to select the time filter and
+`--sort requested-at|status-changed-at --order asc|desc` to control ordering.
+`--status`, `--method`, and `--pg` accept repeated or comma-separated values.
+`transactions` shows payment attempts and uses an experimental API.
+
+### Structured output
+
+```bash
+portone payment view payment-xxx --json
+portone payment list --json id,status
+portone payment list --json --jq '.[] | .id'
+```
+
+`--json` prints the full API object, while `--json id,status` selects top-level
+fields. `--jq/-q` requires `--json`. Lists emit arrays; view, cancellation, and
+webhook resend emit objects. JSON retains the API's field names, statuses,
+and integer amounts. An empty result is `[]` and exits successfully.
+
+Without `--json`, terminal output uses readable tables and detail views.
+Non-TTY lists are headerless TSV. Amounts are integer minor currency units.
+
+### Cancellation and webhook results
+
+`cancel` requires a reason and confirms the payment and requested cancellation
+interactively. Pass `--yes` to skip confirmation; it is required when no TTY is
+available. Omitting `--amount` cancels the full remaining amount.
+`--tax-free-amount`, `--vat-amount`, and `--current-cancellable-amount` also
+accept integer minor currency units.
+
+For refund accounts and other complex fields, pass a complete JSON body with
+`--input cancel.json` or `--input -`. It must contain a reason and cannot be
+combined with individual cancellation field flags. A `storeId` in the body
+overrides the default store, but must match an explicit `--store`.
+
+A cancellation result of `REQUESTED` means the request was accepted and
+`SUCCEEDED` means it completed; both exit with code 0. `FAILED` exits with code
+1. Cancellations are not retried automatically.
+
+Webhook resend executes without an additional confirmation. When
+`--webhook-id` is omitted, the API selects the latest webhook. A successful
+resend request and a successful delivery are distinct; a reported delivery
+failure exits with code 1. Webhook request and response details are available
+through `payment webhook list --json`.
 
 ## `portone api`
 

@@ -1,4 +1,5 @@
 pub mod jsoncolor;
+pub mod resource;
 
 use std::io::Write;
 
