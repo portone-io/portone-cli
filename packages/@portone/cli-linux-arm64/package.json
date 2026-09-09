@@ -9,7 +9,7 @@
     "directory": "packages/@portone/cli-linux-arm64"
   },
   "engines": {
-    "node": ">=20.6"
+    "node": "^22.18.0 || >=24.0.0"
   },
   "homepage": "https://portone.io",
   "os": [

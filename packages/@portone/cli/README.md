@@ -18,7 +18,7 @@ Code and Codex (`portone setup`).
 npm install --global @portone/cli
 ```
 
-Node.js 20 or later is required.
+Node.js 22.18.0 or later in the 22.x line, or Node.js 24 or later, is required.
 
 ## Display language
 
