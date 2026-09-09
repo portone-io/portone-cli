@@ -336,10 +336,14 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
 
       # Publish platform packages first and @portone/cli last so its optional
       # dependencies already exist when users install it.
       - name: Publish npm packages as latest
+        # Bootstrap only: remove this env block after configuring npm trusted publishers for all packages.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           shopt -s nullglob
           platform_packages=(./npm-packages/portone-cli-[a-z]*.tgz)
