@@ -22,7 +22,7 @@ portone payment list [OPTIONS]
 | `--until <RFC3339>` | End of the time range (default: now) |
 | `--time-field <TIME_FIELD>` | Timestamp used by --from and --until [possible values: created-at, status-changed-at] |
 | `--sort <SORT>` | Field used to sort payments [possible values: requested-at, status-changed-at] |
-| `--order <ORDER>` | Sort order [possible values: asc, desc] |
+| `--order <ORDER>` | Sort order [possible values: desc, asc] |
 | `--search <TEXT>` | Search payment text |
 | `--search-field <SEARCH_FIELD>` | Payment field to search |
 | `--all-stores` | List all accessible stores, ignoring the default store |

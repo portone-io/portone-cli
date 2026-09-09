@@ -2079,6 +2079,7 @@ dependencies = [
  "jaq-json",
  "jaq-std",
  "keyring",
+ "portone-schema-macros",
  "predicates",
  "serde",
  "serde_json",
@@ -2089,6 +2090,20 @@ dependencies = [
  "unicode-width",
  "ureq",
  "url",
+]
+
+[[package]]
+name = "portone-schema-macros"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "heck",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+ "tempfile",
 ]
 
 [[package]]

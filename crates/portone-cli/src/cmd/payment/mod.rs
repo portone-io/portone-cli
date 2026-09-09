@@ -1,5 +1,6 @@
 mod cancel;
 mod list;
+mod schema;
 mod webhook;
 
 use clap::{Args, Subcommand};

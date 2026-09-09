@@ -5,150 +5,41 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use super::schema::{
+    Currency, PaymentMethodType, PaymentSortBy, PaymentStatus, PaymentTextSearchField,
+    PaymentTimestampType, PgProvider, SortOrder, VersionFilter,
+};
 use super::{CommonArgs, array_member};
 use crate::error::CliError;
 use crate::factory::Factory;
 use crate::http::client::Client;
 use crate::output::resource::{self, ResourceKind, ResourceOutput};
 
-const STATUSES: &[&str] = &[
-    "ready",
-    "pending",
-    "virtual-account-issued",
-    "paid",
-    "failed",
-    "partial-cancelled",
-    "cancelled",
-];
-const METHODS: &[&str] = &[
-    "card",
-    "transfer",
-    "virtual-account",
-    "gift-certificate",
-    "mobile",
-    "easy-pay",
-    "convenience-store",
-    "crypto",
-];
-const PG_PROVIDERS: &[&str] = &[
-    "html5-inicis",
-    "paypal",
-    "paypal-v2",
-    "inicis",
-    "danal",
-    "nice",
-    "danal-tpay",
-    "jtnet",
-    "uplus",
-    "naverpay",
-    "kakao",
-    "settle",
-    "kcp",
-    "mobilians",
-    "kakaopay",
-    "naverco",
-    "syrup",
-    "kicc",
-    "eximbay",
-    "smilepay",
-    "payco",
-    "kcp-billing",
-    "alipay",
-    "payple",
-    "chai",
-    "bluewalnut",
-    "smartro",
-    "smartro-v2",
-    "paymentwall",
-    "tosspayments",
-    "kcp-quick",
-    "daou",
-    "galaxia",
-    "tosspay",
-    "kcp-direct",
-    "settle-acc",
-    "settle-firm",
-    "inicis-unified",
-    "ksnet",
-    "pinpay",
-    "nice-v2",
-    "toss-brandpay",
-    "welcome",
-    "tosspay-v2",
-    "inicis-v2",
-    "kpn",
-    "kcp-v2",
-    "hyphen",
-    "eximbay-v2",
-    "inicis-jp",
-    "payletter-global",
-    "mobilians-v2",
-    "triple-a",
-    "kicc-v2",
-    "innopay",
-    "hecto-global",
-];
-const SEARCH_FIELDS: &[&str] = &[
-    "all",
-    "payment-id",
-    "tx-id",
-    "schedule-id",
-    "fail-reason",
-    "card-issuer",
-    "card-acquirer",
-    "card-bin",
-    "card-number",
-    "card-approval-number",
-    "card-receipt-name",
-    "card-installment",
-    "trans-bank",
-    "virtual-account-holder-name",
-    "virtual-account-bank",
-    "virtual-account-number",
-    "pg-merchant-id",
-    "pg-tx-id",
-    "pg-receipt-id",
-    "receipt-approval-number",
-    "pg-cancellation-id",
-    "cancel-reason",
-    "order-name",
-    "customer-name",
-    "customer-email",
-    "customer-phone-number",
-    "customer-address",
-    "customer-zipcode",
-    "user-agent",
-    "billing-key",
-    "promotion-id",
-    "gift-certification-approval-number",
-];
-const CURRENCIES: &str = "KRW USD JPY AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HRK HTG HUF IDR ILS INR IQD IRR ISK JMD JOD KES KGS KHR KMF KPW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USN UYI UYU UYW UZS VED VES VND VUV WST XAF XAG XAU XBA XBB XBC XBD XCD XDR XOF XPD XPF XPT XSU XTS XUA XXX YER ZAR ZMW ZWL";
-
 #[derive(Debug, Args)]
 pub struct ListArgs {
     #[arg(long, short = 'L', default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=60_000), help = "Maximum number of payments to fetch (1-60000)")]
     pub limit: u32,
-    #[arg(long, value_delimiter = ',', value_parser = clap::builder::PossibleValuesParser::new(STATUSES), help = "Filter by payment status (repeatable or comma-separated)")]
-    pub status: Vec<String>,
-    #[arg(long, value_delimiter = ',', value_parser = clap::builder::PossibleValuesParser::new(METHODS), help = "Filter by payment method (repeatable or comma-separated)")]
-    pub method: Vec<String>,
-    #[arg(long, value_delimiter = ',', value_parser = clap::builder::PossibleValuesParser::new(PG_PROVIDERS), hide_possible_values = true, help = "Filter by PG provider (repeatable or comma-separated)")]
-    pub pg: Vec<String>,
+    #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(PaymentStatus), help = "Filter by payment status (repeatable or comma-separated)")]
+    pub status: Vec<PaymentStatus>,
+    #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(PaymentMethodType), help = "Filter by payment method (repeatable or comma-separated)")]
+    pub method: Vec<PaymentMethodType>,
+    #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(PgProvider), hide_possible_values = true, help = "Filter by PG provider (repeatable or comma-separated)")]
+    pub pg: Vec<PgProvider>,
     #[arg(
         long,
         value_name = "CURRENCY",
-        value_parser = clap::builder::PossibleValuesParser::new(CURRENCIES.split_whitespace()),
+        value_parser = clap::value_parser!(Currency),
         ignore_case = true,
         hide_possible_values = true,
         help = "Filter by currency code, such as KRW or USD"
     )]
-    pub currency: Option<String>,
+    pub currency: Option<Currency>,
     #[arg(long, conflicts_with = "live", help = "Show only test payments")]
     pub test: bool,
     #[arg(long, conflicts_with = "test", help = "Show only live payments")]
     pub live: bool,
-    #[arg(long, default_value = "v2", value_parser = ["v1", "v2", "all"], help = "Filter by PortOne payment version")]
-    pub version: String,
+    #[arg(long, default_value = "v2", value_parser = clap::value_parser!(VersionFilter), help = "Filter by PortOne payment version")]
+    pub version: VersionFilter,
     #[arg(
         long,
         value_name = "RFC3339",
@@ -161,16 +52,16 @@ pub struct ListArgs {
         help = "End of the time range (default: now)"
     )]
     pub until: Option<String>,
-    #[arg(long, default_value = "status-changed-at", value_parser = ["created-at", "status-changed-at"], help = "Timestamp used by --from and --until")]
-    pub time_field: String,
-    #[arg(long, default_value = "status-changed-at", value_parser = ["requested-at", "status-changed-at"], help = "Field used to sort payments")]
-    pub sort: String,
-    #[arg(long, default_value = "desc", value_parser = ["asc", "desc"], help = "Sort order")]
-    pub order: String,
+    #[arg(long, default_value = "status-changed-at", value_parser = clap::value_parser!(PaymentTimestampType), help = "Timestamp used by --from and --until")]
+    pub time_field: PaymentTimestampType,
+    #[arg(long, default_value = "status-changed-at", value_parser = clap::value_parser!(PaymentSortBy), help = "Field used to sort payments")]
+    pub sort: PaymentSortBy,
+    #[arg(long, default_value = "desc", value_parser = clap::value_parser!(SortOrder), help = "Sort order")]
+    pub order: SortOrder,
     #[arg(long, value_name = "TEXT", help = "Search payment text")]
     pub search: Option<String>,
-    #[arg(long, default_value = "all", value_parser = clap::builder::PossibleValuesParser::new(SEARCH_FIELDS), hide_possible_values = true, help = "Payment field to search")]
-    pub search_field: String,
+    #[arg(long, default_value = "all", value_parser = clap::value_parser!(PaymentTextSearchField), hide_possible_values = true, help = "Payment field to search")]
+    pub search_field: PaymentTextSearchField,
     #[arg(
         long,
         conflicts_with = "store",
@@ -183,7 +74,7 @@ pub struct ListArgs {
 
 pub fn run(f: &mut Factory, common: &CommonArgs, args: ListArgs) -> Result<(), CliError> {
     args.output.validate(ResourceKind::Payment)?;
-    if args.search.is_none() && args.search_field != "all" {
+    if args.search.is_none() && args.search_field != PaymentTextSearchField::All {
         return Err(CliError::Other(anyhow::anyhow!(crate::message!(
             "payment-search-field-requires-search"
         ))));
@@ -240,7 +131,7 @@ pub fn run(f: &mut Factory, common: &CommonArgs, args: ListArgs) -> Result<(), C
             f.localizer,
             "payment-list-scope",
             store = resource::cell(&scope),
-            version = args.version.to_ascii_uppercase(),
+            version = args.version.as_api_str(),
             environment = environment,
             from = filter["from"].as_str().unwrap_or_default(),
             until = filter["until"].as_str().unwrap_or_default()
@@ -281,46 +172,42 @@ fn build_filter(
         "until".into(),
         json!(until.format(&Rfc3339).map_err(anyhow::Error::from)?),
     );
-    filter.insert("timestampType".into(), json!(api_enum(&args.time_field)));
-    filter.insert("sortBy".into(), json!(api_enum(&args.sort)));
-    filter.insert("sortOrder".into(), json!(api_enum(&args.order)));
+    filter.insert("timestampType".into(), json!(args.time_field));
+    filter.insert("sortBy".into(), json!(args.sort));
+    filter.insert("sortOrder".into(), json!(args.order));
     if let Some(store) = store {
         filter.insert("storeId".into(), json!(store));
     }
-    for (key, values) in [
-        ("status", &args.status),
-        ("methods", &args.method),
-        ("pgProvider", &args.pg),
-    ] {
-        if !values.is_empty() {
-            filter.insert(
-                key.into(),
-                json!(values.iter().map(|s| api_enum(s)).collect::<Vec<_>>()),
-            );
-        }
-    }
-    if args.version != "all" {
-        filter.insert("version".into(), json!(api_enum(&args.version)));
+    insert_filter_values(&mut filter, "status", &args.status);
+    insert_filter_values(&mut filter, "methods", &args.method);
+    insert_filter_values(&mut filter, "pgProvider", &args.pg);
+    if let VersionFilter::Version(version) = args.version {
+        filter.insert("version".into(), json!(version));
     }
     if args.test || args.live {
         filter.insert("isTest".into(), json!(args.test));
     }
     if let Some(currency) = &args.currency {
-        super::nonempty(currency, "--currency")?;
-        filter.insert("currency".into(), json!(currency.to_ascii_uppercase()));
+        filter.insert("currency".into(), json!(currency));
     }
     if let Some(search) = &args.search {
         super::nonempty(search, "--search")?;
         filter.insert(
             "textSearch".into(),
-            json!([{"field": api_enum(&args.search_field), "value": search}]),
+            json!([{"field": args.search_field, "value": search}]),
         );
     }
     Ok(Value::Object(filter))
 }
 
-fn api_enum(value: &str) -> String {
-    value.replace('-', "_").to_ascii_uppercase()
+fn insert_filter_values<T: serde::Serialize>(
+    filter: &mut Map<String, Value>,
+    key: &str,
+    values: &[T],
+) {
+    if !values.is_empty() {
+        filter.insert(key.into(), json!(values));
+    }
 }
 
 fn parse_date(value: &str, field: &str) -> Result<OffsetDateTime, CliError> {

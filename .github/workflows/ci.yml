@@ -39,14 +39,18 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --workspace
 
       - name: Reference docs up to date
         if: matrix.os == 'ubuntu-24.04'
         run: cargo xtask gen-docs --check
+
+      - name: Schema sync workflow tests
+        if: matrix.os == 'ubuntu-24.04'
+        run: node --test scripts/sync-openapi.test.mjs
 
       - name: Check musl target
         if: matrix.os == 'ubuntu-24.04'
@@ -54,7 +58,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
           rustup target add x86_64-unknown-linux-musl
-          cargo check --target x86_64-unknown-linux-musl --all-targets
+          cargo check --workspace --target x86_64-unknown-linux-musl --all-targets
 
   vet:
     name: Supply chain (cargo vet)
