@@ -1,4 +1,5 @@
 mod gen_docs;
+mod sync_plugin_skills;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -16,6 +17,14 @@ struct Xtask {
 enum Command {
     #[command(about = "Generate the command reference in docs/reference")]
     GenDocs(GenDocsArgs),
+    #[command(about = "Copy the canonical CLI skill into both plugin bundles")]
+    SyncPluginSkills(SyncPluginSkillsArgs),
+}
+
+#[derive(Args)]
+struct SyncPluginSkillsArgs {
+    #[arg(long, help = "Check generated output against the canonical skill")]
+    check: bool,
 }
 
 #[derive(Args)]
@@ -35,6 +44,24 @@ fn main() -> ExitCode {
     let xtask = Xtask::parse();
     match xtask.command {
         Command::GenDocs(args) => run_gen_docs(args),
+        Command::SyncPluginSkills(args) => run_sync_plugin_skills(args),
+    }
+}
+
+fn run_sync_plugin_skills(args: SyncPluginSkillsArgs) -> ExitCode {
+    match sync_plugin_skills::run(&workspace_root(), args.check) {
+        Ok(differences) if args.check && !differences.is_empty() => {
+            for difference in differences {
+                eprintln!("{difference}");
+            }
+            eprintln!("run `cargo xtask sync-plugin-skills` to update them");
+            ExitCode::FAILURE
+        }
+        Ok(_) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("xtask: {err}");
+            ExitCode::FAILURE
+        }
     }
 }
 

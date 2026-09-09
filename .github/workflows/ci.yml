@@ -48,6 +48,10 @@ jobs:
         if: matrix.os == 'ubuntu-24.04'
         run: cargo xtask gen-docs --check
 
+      - name: Plugin skills up to date
+        if: matrix.os == 'ubuntu-24.04'
+        run: cargo xtask sync-plugin-skills --check
+
       - name: Schema sync workflow tests
         if: matrix.os == 'ubuntu-24.04'
         run: node --test scripts/sync-openapi.test.mjs

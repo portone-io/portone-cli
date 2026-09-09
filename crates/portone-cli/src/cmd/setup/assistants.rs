@@ -9,9 +9,8 @@ pub enum Assistant {
 pub struct AssistantDefinition {
     pub display_name: &'static str,
     pub version_command: &'static str,
-    pub install_command: &'static str,
-    pub install_hint: &'static str,
-    pub update_command: Option<&'static str>,
+    pub setup_url: &'static str,
+    pub capabilities: &'static [(&'static str, &'static [&'static str])],
     validate: fn(&str) -> bool,
 }
 
@@ -24,18 +23,30 @@ impl AssistantDefinition {
 static CLAUDE: AssistantDefinition = AssistantDefinition {
     display_name: "Claude Code",
     version_command: "claude --version",
-    install_command: "npm install -g @anthropic-ai/claude-code",
-    install_hint: "npm install -g @anthropic-ai/claude-code",
-    update_command: Some("claude update"),
+    setup_url: "https://code.claude.com/docs/en/setup",
+    capabilities: &[
+        ("claude plugin marketplace list --help", &["--json"]),
+        ("claude plugin marketplace add --help", &["--scope"]),
+        ("claude plugin marketplace update --help", &[]),
+        ("claude plugin list --help", &["--json"]),
+        ("claude plugin install --help", &["--scope"]),
+        ("claude plugin update --help", &["--scope"]),
+        ("claude plugin enable --help", &["--scope"]),
+    ],
     validate: |output| output.contains("Claude Code"),
 };
 
 static CODEX: AssistantDefinition = AssistantDefinition {
     display_name: "Codex",
     version_command: "codex --version",
-    install_command: "npm install -g @openai/codex",
-    install_hint: "npm install -g @openai/codex",
-    update_command: None,
+    setup_url: "https://developers.openai.com/codex/cli",
+    capabilities: &[
+        ("codex plugin marketplace list --help", &["--json"]),
+        ("codex plugin marketplace add --help", &["--json"]),
+        ("codex plugin marketplace upgrade --help", &["--json"]),
+        ("codex plugin list --help", &["--json", "--marketplace"]),
+        ("codex plugin add --help", &["--json"]),
+    ],
     validate: |output| output.to_lowercase().contains("codex"),
 };
 

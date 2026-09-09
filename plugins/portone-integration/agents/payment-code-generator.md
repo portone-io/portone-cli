@@ -3,7 +3,7 @@ name: payment-code-generator
 description: Implement PortOne checkout, billing-key, key-in, or identity-verification code that matches the user's project. Use for new integrations, migrations, and payment feature work.
 model: inherit
 color: cyan
-tools: ["Read", "Write", "Glob", "Grep", "AskUserQuestion", "mcp__portone__readPortoneV2FrontendCode", "mcp__portone__readPortoneV2BackendCode", "mcp__portone__readPortoneOpenapiSchema", "mcp__portone__readPortoneOpenapiSchemaSummary", "mcp__portone__listPortoneDocs", "mcp__portone__readPortoneDoc", "mcp__portone__regexSearchPortoneDocs"]
+tools: ["Read", "Write", "Glob", "Grep", "AskUserQuestion", "mcp__plugin_portone-integration_portone__readPortoneV2FrontendCode", "mcp__plugin_portone-integration_portone__readPortoneV2BackendCode", "mcp__plugin_portone-integration_portone__readPortoneOpenapiSchema", "mcp__plugin_portone-integration_portone__readPortoneOpenapiSchemaSummary", "mcp__plugin_portone-integration_portone__listPortoneDocs", "mcp__plugin_portone-integration_portone__readPortoneDoc", "mcp__plugin_portone-integration_portone__regexSearchPortoneDocs"]
 ---
 
 You implement production-ready PortOne payment integrations that fit the

@@ -10,7 +10,6 @@ portone setup [OPTIONS]
 
 | Option | Description |
 | --- | --- |
-| `--allow-dirty` | Proceed even when the Git working tree is dirty |
 | `--assistant <ASSISTANT>` | Assistant to configure (claude \| codex \| both) |
 
 ## See also

@@ -1,292 +1,314 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 use crate::i18n::LocalizedContext;
-use serde_json::{Map, Value, json};
 
-use super::assets;
 use super::assistants::Assistant;
-use super::steps::CommandRunner;
+use super::steps::{self, CommandRunner};
 
-const CLAUDE_PLUGIN_NAME: &str = "portone-integration";
-const CODEX_PLUGIN_NAME: &str = "portone-codex";
-const REPO_MARKETPLACE_NAME: &str = "portone";
-const REPO_MARKETPLACE_DISPLAY_NAME: &str = "PortOne Plugins";
+const REPOSITORY: &str = "portone-io/portone-cli";
+const CLAUDE_MARKETPLACES: &str = "claude plugin marketplace list --json";
+const CLAUDE_PLUGINS: &str = "claude plugin list --json";
+const CODEX_MARKETPLACES: &str = "codex plugin marketplace list --json";
+const CODEX_PLUGINS: &str = "codex plugin list --marketplace portone --json";
+const CODEX_ADD: &str = "codex plugin add portone-codex@portone --json";
 
-pub fn configure(
+pub struct Installation {
+    pub assistant: Assistant,
+    marketplace_exists: bool,
+    plugin_installed: bool,
+}
+
+/// Inspect every selected host before making any changes to either host.
+pub fn preflight(
+    runner: &dyn CommandRunner,
+    targets: &[Assistant],
+    cwd: &Path,
+) -> anyhow::Result<Vec<Installation>> {
+    steps::check_runtime(runner, cwd)?;
+    targets
+        .iter()
+        .map(|&assistant| {
+            steps::check_assistant(runner, assistant, cwd)?;
+            inspect(runner, assistant, cwd)
+        })
+        .collect()
+}
+
+fn read_json<T: DeserializeOwned>(
+    runner: &dyn CommandRunner,
+    command: &str,
+    cwd: &Path,
+) -> anyhow::Result<T> {
+    let output = runner.run_capture_stdout(command, cwd)?;
+    serde_json::from_str(&output)
+        .with_lcontext(|| crate::message!("setup-invalid-command-json", command = command))
+}
+
+#[derive(Deserialize)]
+struct ClaudeMarketplace {
+    name: String,
+    source: String,
+    repo: Option<String>,
+    url: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudePlugin {
+    id: String,
+    scope: String,
+    enabled: bool,
+    install_path: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct CodexMarketplaces {
+    marketplaces: Vec<CodexMarketplace>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexMarketplace {
+    name: String,
+    marketplace_source: Option<CodexSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSource {
+    source_type: String,
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct CodexPlugins {
+    installed: Vec<CodexPlugin>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexPlugin {
+    name: String,
+    marketplace_name: String,
+    installed: bool,
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexInstall {
+    installed_path: PathBuf,
+}
+
+fn expected_repository(source: &str) -> bool {
+    let source = source.trim_end_matches('/');
+    let repository = source
+        .strip_prefix("https://github.com/")
+        .or_else(|| source.strip_prefix("ssh://git@github.com/"))
+        .or_else(|| source.strip_prefix("git@github.com:"))
+        .unwrap_or(source);
+    repository
+        .strip_suffix(".git")
+        .unwrap_or(repository)
+        .eq_ignore_ascii_case(REPOSITORY)
+}
+
+fn source_conflict(assistant: Assistant) -> anyhow::Error {
+    let command = match assistant {
+        Assistant::Claude => CLAUDE_MARKETPLACES,
+        Assistant::Codex => CODEX_MARKETPLACES,
+    };
+    anyhow::anyhow!(crate::message!(
+        "setup-marketplace-conflict",
+        assistant = assistant.definition().display_name,
+        command = command
+    ))
+}
+
+fn inspect(
     runner: &dyn CommandRunner,
     assistant: Assistant,
-    project_dir: &Path,
-) -> anyhow::Result<()> {
-    match assistant {
-        Assistant::Claude => configure_claude(runner, project_dir),
-        Assistant::Codex => configure_codex(project_dir),
-    }
-}
-
-pub fn configure_claude(runner: &dyn CommandRunner, cwd: &Path) -> anyhow::Result<()> {
-    let _ = runner.run_capture("claude plugin marketplace remove portone", cwd);
-    runner.run_capture("claude plugin marketplace add portone-io/portone-cli", cwd)?;
-    runner.run_capture(&format!("claude plugin install {CLAUDE_PLUGIN_NAME}"), cwd)?;
-    Ok(())
-}
-
-pub fn configure_codex(project_dir: &Path) -> anyhow::Result<()> {
-    let target_plugin_dir = project_dir.join("plugins").join(CODEX_PLUGIN_NAME);
-    assets::extract(&target_plugin_dir)?;
-
-    let marketplace_path = project_dir
-        .join(".agents")
-        .join("plugins")
-        .join("marketplace.json");
-    update_codex_marketplace(&marketplace_path)
-}
-
-fn update_codex_marketplace(marketplace_path: &Path) -> anyhow::Result<()> {
-    let existing = match std::fs::read_to_string(marketplace_path) {
-        Ok(raw) => Some(raw),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-        Err(err) => {
-            return Err(err).with_lcontext(|| {
-                crate::message!(
-                    "setup-read-marketplace-failed",
-                    path = marketplace_path.display()
-                )
-            });
+    cwd: &Path,
+) -> anyhow::Result<Installation> {
+    let (marketplace_exists, plugin_installed) = match assistant {
+        Assistant::Claude => {
+            let marketplaces: Vec<ClaudeMarketplace> = read_json(runner, CLAUDE_MARKETPLACES, cwd)?;
+            let entries: Vec<_> = marketplaces
+                .iter()
+                .filter(|entry| entry.name == "portone")
+                .collect();
+            if entries.len() > 1
+                || entries.iter().any(|entry| {
+                    let source = match entry.source.as_str() {
+                        "github" => entry.repo.as_deref(),
+                        "git" => entry.url.as_deref(),
+                        _ => None,
+                    };
+                    !source.is_some_and(expected_repository)
+                })
+            {
+                return Err(source_conflict(assistant));
+            }
+            let plugins: Vec<ClaudePlugin> = read_json(runner, CLAUDE_PLUGINS, cwd)?;
+            (!entries.is_empty(), plugins.iter().any(is_claude_plugin))
+        }
+        Assistant::Codex => {
+            let marketplaces: CodexMarketplaces = read_json(runner, CODEX_MARKETPLACES, cwd)?;
+            let entries: Vec<_> = marketplaces
+                .marketplaces
+                .iter()
+                .filter(|entry| entry.name == "portone")
+                .collect();
+            if entries.len() > 1
+                || entries.iter().any(|entry| {
+                    !entry.marketplace_source.as_ref().is_some_and(|source| {
+                        source.source_type == "git" && expected_repository(&source.source)
+                    })
+                })
+            {
+                return Err(source_conflict(assistant));
+            }
+            let plugins: CodexPlugins = read_json(runner, CODEX_PLUGINS, cwd)?;
+            (
+                !entries.is_empty(),
+                plugins
+                    .installed
+                    .iter()
+                    .any(|plugin| is_codex_plugin(plugin) && plugin.installed),
+            )
         }
     };
+    Ok(Installation {
+        assistant,
+        marketplace_exists,
+        plugin_installed,
+    })
+}
 
-    let content = merge_marketplace(existing.as_deref())?;
+fn is_claude_plugin(plugin: &ClaudePlugin) -> bool {
+    plugin.id == "portone-integration@portone" && plugin.scope == "user"
+}
 
-    if let Some(parent) = marketplace_path.parent() {
-        std::fs::create_dir_all(parent)?;
+fn is_codex_plugin(plugin: &CodexPlugin) -> bool {
+    plugin.name == "portone-codex" && plugin.marketplace_name == "portone"
+}
+
+impl Installation {
+    pub fn apply(&self, runner: &dyn CommandRunner, cwd: &Path) -> anyhow::Result<()> {
+        let installed_path = match self.assistant {
+            Assistant::Claude => {
+                runner.run_capture(
+                    if self.marketplace_exists {
+                        "claude plugin marketplace update portone"
+                    } else {
+                        "claude plugin marketplace add portone-io/portone-cli --scope user"
+                    },
+                    cwd,
+                )?;
+                runner.run_capture(
+                    if self.plugin_installed {
+                        "claude plugin update portone-integration@portone --scope user"
+                    } else {
+                        "claude plugin install portone-integration@portone --scope user"
+                    },
+                    cwd,
+                )?;
+                let mut plugin = claude_installed(runner, cwd)?;
+                if !plugin.enabled {
+                    runner.run_capture(
+                        "claude plugin enable portone-integration@portone --scope user",
+                        cwd,
+                    )?;
+                    plugin = claude_installed(runner, cwd)?;
+                }
+                if !plugin.enabled {
+                    return Err(not_ready(self.assistant));
+                }
+                plugin.install_path
+            }
+            Assistant::Codex => {
+                // Native upgrade exits nonzero if any marketplace refresh fails.
+                runner.run_capture_stdout(
+                    if self.marketplace_exists {
+                        "codex plugin marketplace upgrade portone --json"
+                    } else {
+                        "codex plugin marketplace add portone-io/portone-cli --json"
+                    },
+                    cwd,
+                )?;
+                // Native add also reinstalls from the refreshed marketplace snapshot.
+                let result: CodexInstall = read_json(runner, CODEX_ADD, cwd)?;
+                let plugins: CodexPlugins = read_json(runner, CODEX_PLUGINS, cwd)?;
+                if !plugins
+                    .installed
+                    .iter()
+                    .any(|plugin| is_codex_plugin(plugin) && plugin.installed && plugin.enabled)
+                {
+                    return Err(not_ready(self.assistant));
+                }
+                result.installed_path
+            }
+        };
+        verify_bundle(self.assistant, &installed_path)
     }
-    std::fs::write(marketplace_path, content).with_lcontext(|| {
+}
+
+fn claude_installed(runner: &dyn CommandRunner, cwd: &Path) -> anyhow::Result<ClaudePlugin> {
+    let plugins: Vec<ClaudePlugin> = read_json(runner, CLAUDE_PLUGINS, cwd)?;
+    plugins
+        .into_iter()
+        .find(is_claude_plugin)
+        .ok_or_else(|| not_ready(Assistant::Claude))
+}
+
+fn not_ready(assistant: Assistant) -> anyhow::Error {
+    let command = match assistant {
+        Assistant::Claude => "/plugin",
+        Assistant::Codex => "/plugins",
+    };
+    anyhow::anyhow!(crate::message!(
+        "setup-plugin-not-ready",
+        assistant = assistant.definition().display_name,
+        command = command
+    ))
+}
+
+fn verify_bundle(assistant: Assistant, root: &Path) -> anyhow::Result<()> {
+    let verify = || -> anyhow::Result<()> {
+        let config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join(".mcp.json"))?)?;
+        let server = &config["mcpServers"]["portone"];
+        anyhow::ensure!(
+            server["command"] == "npx"
+                && server["args"] == serde_json::json!(["-y", "@portone/mcp-server@latest"]),
+            "unexpected PortOne MCP command"
+        );
+        anyhow::ensure!(
+            root.join("skills/portone-cli/SKILL.md").is_file(),
+            "missing portone-cli skill"
+        );
+        if assistant == Assistant::Codex {
+            let manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+                root.join(".codex-plugin/plugin.json"),
+            )?)?;
+            anyhow::ensure!(
+                manifest["skills"] == "./skills/" && manifest["mcpServers"] == "./.mcp.json",
+                "missing skill or MCP manifest reference"
+            );
+        }
+        Ok(())
+    };
+    verify().with_lcontext(|| {
         crate::message!(
-            "setup-write-marketplace-failed",
-            path = marketplace_path.display()
+            "setup-invalid-bundle",
+            assistant = assistant.definition().display_name,
+            path = root.display()
         )
-    })?;
-    Ok(())
-}
-
-fn merge_marketplace(existing: Option<&str>) -> anyhow::Result<String> {
-    let mut name = Value::String(REPO_MARKETPLACE_NAME.to_string());
-    let mut display_name = Value::String(REPO_MARKETPLACE_DISPLAY_NAME.to_string());
-    let mut plugins: Vec<Value> = Vec::new();
-
-    if let Some(raw) = existing {
-        let parsed: Value = serde_json::from_str(raw)
-            .lcontext(crate::message!("setup-parse-marketplace-failed"))?;
-        if let Some(existing_name) = parsed.get("name").filter(|v| v.is_string()) {
-            name = existing_name.clone();
-        }
-        if let Some(existing_display) = parsed
-            .get("interface")
-            .filter(|v| v.is_object())
-            .and_then(|interface| interface.get("displayName"))
-            .filter(|v| !v.is_null())
-        {
-            display_name = existing_display.clone();
-        }
-        if let Some(existing_plugins) = parsed.get("plugins").and_then(Value::as_array) {
-            plugins = existing_plugins.clone();
-        }
-    }
-
-    plugins.retain(|plugin| {
-        !plugin
-            .get("name")
-            .and_then(Value::as_str)
-            .is_some_and(|n| n == CODEX_PLUGIN_NAME)
-    });
-    plugins.push(marketplace_entry());
-
-    let mut interface = Map::new();
-    interface.insert("displayName".to_string(), display_name);
-
-    let mut marketplace = Map::new();
-    marketplace.insert("name".to_string(), name);
-    marketplace.insert("interface".to_string(), Value::Object(interface));
-    marketplace.insert("plugins".to_string(), Value::Array(plugins));
-
-    let mut content = serde_json::to_string_pretty(&Value::Object(marketplace))?;
-    content.push('\n');
-    Ok(content)
-}
-
-fn marketplace_entry() -> Value {
-    json!({
-        "name": CODEX_PLUGIN_NAME,
-        "source": {
-            "source": "local",
-            "path": format!("./plugins/{CODEX_PLUGIN_NAME}")
-        },
-        "policy": {
-            "installation": "AVAILABLE",
-            "authentication": "ON_INSTALL"
-        },
-        "category": "Productivity"
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::cmd::setup::steps::testing::MockRunner;
-
-    #[test]
-    fn merge_creates_default_marketplace() {
-        let content = merge_marketplace(None).unwrap();
-        let expected = r#"{
-  "name": "portone",
-  "interface": {
-    "displayName": "PortOne Plugins"
-  },
-  "plugins": [
-    {
-      "name": "portone-codex",
-      "source": {
-        "source": "local",
-        "path": "./plugins/portone-codex"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Productivity"
-    }
-  ]
-}
-"#;
-        assert_eq!(content, expected);
-    }
-
-    #[test]
-    fn merge_preserves_existing_and_replaces_current_entry() {
-        let existing = r#"{
-            "name": "custom",
-            "interface": { "displayName": "Custom Name" },
-            "plugins": [
-                { "name": "other-plugin", "category": "Other" },
-                { "name": "portone-codex", "stale": true }
-            ]
-        }"#;
-        let merged: Value =
-            serde_json::from_str(&merge_marketplace(Some(existing)).unwrap()).unwrap();
-
-        assert_eq!(merged["name"], "custom");
-        assert_eq!(merged["interface"]["displayName"], "Custom Name");
-
-        let plugins = merged["plugins"].as_array().unwrap();
-        assert_eq!(plugins.len(), 2);
-        assert_eq!(plugins[0]["name"], "other-plugin");
-        assert_eq!(plugins[1]["name"], "portone-codex");
-        assert!(plugins[1].get("stale").is_none());
-        assert_eq!(plugins[1]["source"]["path"], "./plugins/portone-codex");
-    }
-
-    #[test]
-    fn merge_applies_defaults_for_missing_fields() {
-        let existing = r#"{ "name": 42, "plugins": "invalid" }"#;
-        let merged: Value =
-            serde_json::from_str(&merge_marketplace(Some(existing)).unwrap()).unwrap();
-
-        assert_eq!(merged["name"], "portone");
-        assert_eq!(merged["interface"]["displayName"], "PortOne Plugins");
-        assert_eq!(merged["plugins"].as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn merge_defaults_null_display_name() {
-        let existing =
-            r#"{ "name": "portone", "interface": { "displayName": null }, "plugins": [] }"#;
-        let merged: Value =
-            serde_json::from_str(&merge_marketplace(Some(existing)).unwrap()).unwrap();
-        assert_eq!(merged["interface"]["displayName"], "PortOne Plugins");
-    }
-
-    #[test]
-    fn merge_rejects_invalid_json() {
-        let error = merge_marketplace(Some("{ invalid")).unwrap_err();
-        let source = error.root_cause().to_string();
-        assert_eq!(
-            crate::i18n::Localizer::english().format_error(&error),
-            format!("failed to parse marketplace.json: {source}")
-        );
-        assert_eq!(
-            crate::i18n::Localizer::korean().format_error(&error),
-            format!("marketplace.json 구문 분석 실패: {source}")
-        );
-    }
-
-    #[test]
-    fn configure_claude_runs_command_sequence() {
-        let runner = MockRunner::new();
-        configure_claude(&runner, Path::new(".")).unwrap();
-        assert_eq!(
-            *runner.calls.borrow(),
-            vec![
-                "capture:claude plugin marketplace remove portone".to_string(),
-                "capture:claude plugin marketplace add portone-io/portone-cli".to_string(),
-                "capture:claude plugin install portone-integration".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn configure_claude_ignores_remove_failure() {
-        let runner = MockRunner::new().fail_on("claude plugin marketplace remove portone");
-        configure_claude(&runner, Path::new(".")).unwrap();
-        assert_eq!(runner.calls.borrow().len(), 3);
-    }
-
-    #[test]
-    fn configure_claude_propagates_add_failure() {
-        let runner =
-            MockRunner::new().fail_on("claude plugin marketplace add portone-io/portone-cli");
-        assert!(configure_claude(&runner, Path::new(".")).is_err());
-        assert_eq!(runner.calls.borrow().len(), 2);
-    }
-
-    #[test]
-    fn configure_codex_extracts_assets_and_writes_marketplace() {
-        let dir = tempfile::tempdir().unwrap();
-        configure_codex(dir.path()).unwrap();
-
-        assert!(
-            dir.path()
-                .join("plugins/portone-codex/.codex-plugin/plugin.json")
-                .is_file()
-        );
-
-        let marketplace_path = dir.path().join(".agents/plugins/marketplace.json");
-        let raw = std::fs::read_to_string(&marketplace_path).unwrap();
-        assert!(raw.ends_with("}\n"));
-        let marketplace: Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(marketplace["plugins"][0]["name"], "portone-codex");
-    }
-
-    #[test]
-    fn update_codex_marketplace_merges_existing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(".agents/plugins/marketplace.json");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(
-            &path,
-            r#"{ "name": "keep", "plugins": [{ "name": "other" }] }"#,
-        )
-        .unwrap();
-
-        update_codex_marketplace(&path).unwrap();
-
-        let merged: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(merged["name"], "keep");
-        let names: Vec<&str> = merged["plugins"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|p| p["name"].as_str().unwrap())
-            .collect();
-        assert_eq!(names, vec!["other", "portone-codex"]);
-    }
-}
+mod tests;

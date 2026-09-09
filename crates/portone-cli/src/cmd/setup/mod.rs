@@ -1,4 +1,3 @@
-pub mod assets;
 pub mod assistants;
 pub mod plugin;
 pub mod steps;
@@ -26,7 +25,11 @@ const WHITE: Style = AnsiColor::White.on_default();
 
 #[derive(Debug, Args)]
 pub struct SetupArgs {
-    #[arg(long, help = "Proceed even when the Git working tree is dirty")]
+    #[arg(
+        long,
+        hide = true,
+        help = "Deprecated compatibility flag; has no effect"
+    )]
     pub allow_dirty: bool,
 
     #[arg(
@@ -50,23 +53,6 @@ pub fn run(f: &mut Factory, args: SetupArgs) -> Result<(), CliError> {
         )
     );
 
-    if !args.allow_dirty {
-        let spinner = start_spinner(&crate::tr!(localizer, "setup-check-git"));
-        let clean = steps::is_git_clean(&runner, &cwd);
-        if !clean {
-            finish_fail(&spinner, &crate::tr!(localizer, "setup-git-dirty"));
-            anstream::println!(
-                "{}",
-                paint(
-                    YELLOW,
-                    &format!("\n{}", crate::tr!(localizer, "setup-allow-dirty-hint"))
-                )
-            );
-            return Err(CliError::Silent);
-        }
-        finish_succeed(&spinner, &crate::tr!(localizer, "setup-git-checked"));
-    }
-
     let selection = resolve_assistant_selection(
         &localizer,
         args.assistant.as_deref(),
@@ -74,121 +60,50 @@ pub fn run(f: &mut Factory, args: SetupArgs) -> Result<(), CliError> {
     )?;
     let targets = resolve_targets(selection);
 
-    for &assistant in &targets {
-        let definition = assistant.definition();
-        let display = definition.display_name;
-
-        let spinner = start_spinner(&crate::tr!(
-            localizer,
-            "setup-check-installation",
-            assistant = display
-        ));
-        let installed = steps::check_assistant_installed(&runner, assistant, &cwd);
-
-        if !installed {
-            finish_warn(
-                &spinner,
-                &crate::tr!(localizer, "setup-not-installed", assistant = display),
-            );
-
-            let should_install = confirm_installation(&localizer, display)?;
-
-            if should_install {
-                let spinner = start_spinner(&crate::tr!(
-                    localizer,
-                    "setup-installing",
-                    assistant = display
-                ));
-                match steps::install_assistant(&runner, assistant, &cwd) {
-                    Ok(()) => finish_succeed(
-                        &spinner,
-                        &crate::tr!(localizer, "setup-installed", assistant = display),
-                    ),
-                    Err(_) => {
-                        finish_fail(
-                            &spinner,
-                            &crate::tr!(localizer, "setup-install-failed", assistant = display),
-                        );
-                        anstream::println!(
-                            "{}",
-                            paint(
-                                YELLOW,
-                                &format!(
-                                    "\n{}",
-                                    crate::tr!(
-                                        localizer,
-                                        "setup-install-manually",
-                                        assistant = display,
-                                        command = definition.install_hint
-                                    )
-                                )
-                            )
-                        );
-                        return Err(CliError::Silent);
-                    }
-                }
-            } else {
-                anstream::println!(
-                    "{}",
-                    paint(
-                        YELLOW,
-                        &format!(
-                            "\n{}",
-                            crate::tr!(
-                                localizer,
-                                "setup-install-manually",
-                                assistant = display,
-                                command = definition.install_hint
-                            )
-                        )
-                    )
-                );
-                return Err(CliError::Silent);
-            }
-        } else {
-            finish_succeed(
-                &spinner,
-                &crate::tr!(localizer, "setup-installation-found", assistant = display),
-            );
+    let spinner = start_spinner(&crate::tr!(localizer, "setup-preflight"));
+    let installations = match plugin::preflight(&runner, &targets, &cwd) {
+        Ok(installations) => {
+            finish_succeed(&spinner, &crate::tr!(localizer, "setup-preflight-complete"));
+            installations
         }
-
-        if definition.update_command.is_some() {
-            let spinner = start_spinner(&crate::tr!(
-                localizer,
-                "setup-updating",
-                assistant = display
-            ));
-            match steps::update_assistant(&runner, assistant, &cwd) {
-                Ok(()) => finish_succeed(
-                    &spinner,
-                    &crate::tr!(localizer, "setup-updated", assistant = display),
-                ),
-                Err(_) => finish_warn(
-                    &spinner,
-                    &crate::tr!(localizer, "setup-update-failed", assistant = display),
-                ),
-            }
+        Err(error) => {
+            finish_fail(&spinner, &crate::tr!(localizer, "setup-preflight-failed"));
+            return Err(CliError::Other(error));
         }
+    };
 
+    let mut completed = Vec::new();
+    for installation in installations {
+        let assistant = installation.assistant;
+        let display = assistant.definition().display_name;
         let spinner = start_spinner(&crate::tr!(
             localizer,
             "setup-configuring-plugin",
             assistant = display
         ));
-        match plugin::configure(&runner, assistant, &cwd) {
-            Ok(()) => finish_succeed(
-                &spinner,
-                &crate::tr!(localizer, "setup-plugin-configured", assistant = display),
-            ),
-            Err(err) => {
+        match installation.apply(&runner, &cwd) {
+            Ok(()) => {
+                completed.push(assistant);
+                finish_succeed(
+                    &spinner,
+                    &crate::tr!(localizer, "setup-plugin-configured", assistant = display),
+                );
+            }
+            Err(error) => {
                 finish_fail(
                     &spinner,
                     &crate::tr!(localizer, "setup-plugin-failed", assistant = display),
                 );
-                anstream::eprintln!("{}", paint(RED, &localizer.format_error(&err)));
-                return Err(CliError::Silent);
+                anstream::eprintln!("{}", localizer.format_error(&error));
             }
         }
+    }
+    if completed.len() != targets.len() {
+        anstream::eprintln!("{}", crate::tr!(localizer, "setup-incomplete"));
+        if !completed.is_empty() {
+            show_integration_guide(&localizer, &completed);
+        }
+        return Err(CliError::Silent);
     }
 
     anstream::println!(
@@ -264,25 +179,6 @@ impl SelectionPromptText {
     }
 }
 
-fn confirm_installation(localizer: &Localizer, assistant: &str) -> Result<bool, CliError> {
-    let question = crate::tr!(localizer, "setup-install-question", assistant = assistant);
-    let invalid_answer = crate::tr!(localizer, "setup-confirm-invalid-answer");
-    let canceled = crate::tr!(localizer, "setup-prompt-canceled-indicator");
-    let formatter = |answer| {
-        if answer {
-            crate::tr!(localizer, "setup-confirm-yes")
-        } else {
-            crate::tr!(localizer, "setup-confirm-no")
-        }
-    };
-    let mut prompt = inquire::Confirm::new(&question)
-        .with_default(true)
-        .with_error_message(&invalid_answer)
-        .with_formatter(&formatter);
-    prompt.render_config.canceled_prompt_indicator.content = &canceled;
-    prompt.prompt().map_err(prompt_error)
-}
-
 fn prompt_error(error: inquire::InquireError) -> CliError {
     use inquire::InquireError;
 
@@ -316,6 +212,10 @@ fn show_integration_guide(localizer: &Localizer, assistants: &[Assistant]) {
             CYAN,
             &format!("\n{}", crate::tr!(localizer, "setup-next-steps"))
         )
+    );
+    anstream::println!(
+        "{}",
+        paint(WHITE, &crate::tr!(localizer, "setup-mcp-next-steps"))
     );
     anstream::println!("{}", paint(WHITE, &"─".repeat(40)));
 
@@ -394,10 +294,6 @@ fn finish_succeed(spinner: &ProgressBar, message: &str) {
 
 fn finish_fail(spinner: &ProgressBar, message: &str) {
     finish_with_symbol(spinner, RED, "✖", message);
-}
-
-fn finish_warn(spinner: &ProgressBar, message: &str) {
-    finish_with_symbol(spinner, YELLOW, "⚠", message);
 }
 
 #[cfg(test)]

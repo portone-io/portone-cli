@@ -9,7 +9,7 @@
       "name": "portone-integration",
       "source": "./plugins/portone-integration",
       "description": "Generate and review PortOne payment integrations for the V1 and V2 APIs using current documentation and examples from the MCP server.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "keywords": ["portone", "payment", "pg", "billing"]
     }
   ]

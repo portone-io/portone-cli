@@ -10,7 +10,6 @@ pub trait CommandRunner {
     fn run_capture_stdout(&self, cmd: &str, cwd: &Path) -> anyhow::Result<String> {
         self.run_capture(cmd, cwd)
     }
-    fn run_inherit(&self, cmd: &str, cwd: &Path) -> anyhow::Result<()>;
 }
 
 pub struct ShellRunner;
@@ -57,69 +56,68 @@ impl CommandRunner for ShellRunner {
             .output()
             .with_lcontext(|| crate::message!("setup-command-run-failed", command = cmd))?;
         if !output.status.success() {
+            let detail = format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
             anyhow::bail!(crate::message!(
                 "setup-command-output-failed",
                 command = cmd,
-                output = String::from_utf8_lossy(&output.stderr).trim_end()
+                output = detail.trim_end()
             ));
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     }
-
-    fn run_inherit(&self, cmd: &str, cwd: &Path) -> anyhow::Result<()> {
-        let status = shell_command(cmd)
-            .current_dir(cwd)
-            .status()
-            .with_lcontext(|| crate::message!("setup-command-run-failed", command = cmd))?;
-        if !status.success() {
-            anyhow::bail!(crate::message!("setup-command-failed", command = cmd));
-        }
-        Ok(())
-    }
 }
 
-pub fn is_git_clean(runner: &dyn CommandRunner, cwd: &Path) -> bool {
-    match runner.run_capture_stdout("git status --porcelain", cwd) {
-        Ok(output) => output.trim().is_empty(),
-        Err(_) => true,
+pub fn check_runtime(runner: &dyn CommandRunner, cwd: &Path) -> anyhow::Result<()> {
+    for (command, requirement) in [
+        ("git --version", "Git"),
+        ("node --version", "Node.js"),
+        ("npx --version", "npx (npm)"),
+    ] {
+        runner.run_capture_stdout(command, cwd).with_lcontext(|| {
+            crate::message!("setup-runtime-required", requirement = requirement)
+        })?;
     }
+    Ok(())
 }
 
-pub fn check_assistant_installed(
+pub fn check_assistant(
     runner: &dyn CommandRunner,
     assistant: Assistant,
     cwd: &Path,
-) -> bool {
+) -> anyhow::Result<()> {
     let definition = assistant.definition();
-    match runner.run_capture(definition.version_command, cwd) {
-        Ok(output) => definition.validate_version_output(&output),
-        Err(_) => false,
+    let hint = || {
+        crate::message!(
+            "setup-assistant-required-capabilities",
+            assistant = definition.display_name,
+            url = definition.setup_url
+        )
+    };
+    let version = runner
+        .run_capture_stdout(definition.version_command, cwd)
+        .with_lcontext(hint)?;
+    if !definition.validate_version_output(&version) {
+        anyhow::bail!(hint());
     }
-}
-
-pub fn install_assistant(
-    runner: &dyn CommandRunner,
-    assistant: Assistant,
-    cwd: &Path,
-) -> anyhow::Result<()> {
-    runner.run_inherit(assistant.definition().install_command, cwd)
-}
-
-pub fn update_assistant(
-    runner: &dyn CommandRunner,
-    assistant: Assistant,
-    cwd: &Path,
-) -> anyhow::Result<()> {
-    match assistant.definition().update_command {
-        Some(command) => runner.run_inherit(command, cwd),
-        None => Ok(()),
+    for &(command, flags) in definition.capabilities {
+        let help = runner
+            .run_capture_stdout(command, cwd)
+            .with_lcontext(hint)?;
+        if flags.iter().any(|flag| !help.contains(flag)) {
+            anyhow::bail!(hint());
+        }
     }
+    Ok(())
 }
 
 #[cfg(test)]
 pub(crate) mod testing {
     use std::cell::RefCell;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, VecDeque};
     use std::path::Path;
 
     use super::CommandRunner;
@@ -127,7 +125,7 @@ pub(crate) mod testing {
     pub(crate) struct MockRunner {
         pub(crate) calls: RefCell<Vec<String>>,
         fail_commands: Vec<String>,
-        outputs: HashMap<String, String>,
+        outputs: RefCell<HashMap<String, VecDeque<String>>>,
     }
 
     impl MockRunner {
@@ -135,7 +133,7 @@ pub(crate) mod testing {
             Self {
                 calls: RefCell::new(Vec::new()),
                 fail_commands: Vec::new(),
-                outputs: HashMap::new(),
+                outputs: RefCell::new(HashMap::new()),
             }
         }
 
@@ -144,8 +142,12 @@ pub(crate) mod testing {
             self
         }
 
-        pub(crate) fn with_output(mut self, cmd: &str, output: &str) -> Self {
-            self.outputs.insert(cmd.to_string(), output.to_string());
+        pub(crate) fn with_output(self, cmd: &str, output: &str) -> Self {
+            self.outputs
+                .borrow_mut()
+                .entry(cmd.to_string())
+                .or_default()
+                .push_back(output.to_string());
             self
         }
 
@@ -161,11 +163,16 @@ pub(crate) mod testing {
     impl CommandRunner for MockRunner {
         fn run_capture(&self, cmd: &str, _cwd: &Path) -> anyhow::Result<String> {
             self.record("capture", cmd)?;
-            Ok(self.outputs.get(cmd).cloned().unwrap_or_default())
-        }
-
-        fn run_inherit(&self, cmd: &str, _cwd: &Path) -> anyhow::Result<()> {
-            self.record("inherit", cmd)
+            let mut outputs = self.outputs.borrow_mut();
+            let Some(queue) = outputs.get_mut(cmd) else {
+                return Ok(String::new());
+            };
+            // Keep the final response for repeated reads of an unchanged state.
+            Ok(if queue.len() > 1 {
+                queue.pop_front().unwrap()
+            } else {
+                queue.front().cloned().unwrap_or_default()
+            })
         }
     }
 }
@@ -200,59 +207,43 @@ mod tests {
     }
 
     #[test]
-    fn git_clean_when_no_output() {
-        let runner = MockRunner::new().with_output("git status --porcelain", "  \n");
-        assert!(is_git_clean(&runner, Path::new(".")));
-    }
-
-    #[test]
-    fn git_dirty_when_changes_listed() {
-        let runner = MockRunner::new().with_output("git status --porcelain", " M src/main.rs\n");
-        assert!(!is_git_clean(&runner, Path::new(".")));
-    }
-
-    #[test]
-    fn git_clean_when_command_fails() {
-        let runner = MockRunner::new().fail_on("git status --porcelain");
-        assert!(is_git_clean(&runner, Path::new(".")));
-    }
-
-    #[test]
-    fn assistant_installed_requires_valid_output() {
-        let runner = MockRunner::new().with_output("claude --version", "1.0.0 (Claude Code)");
-        assert!(check_assistant_installed(
-            &runner,
-            Assistant::Claude,
-            Path::new(".")
-        ));
-
+    fn assistant_requires_recognized_version_and_plugin_capabilities() {
         let runner = MockRunner::new().with_output("claude --version", "zsh: command not found");
-        assert!(!check_assistant_installed(
-            &runner,
-            Assistant::Claude,
-            Path::new(".")
-        ));
-
+        assert!(check_assistant(&runner, Assistant::Claude, Path::new(".")).is_err());
+        let runner = MockRunner::new().with_output("codex --version", "codex-cli 0.1.0");
+        assert!(check_assistant(&runner, Assistant::Codex, Path::new(".")).is_err());
         let runner = MockRunner::new().fail_on("codex --version");
-        assert!(!check_assistant_installed(
-            &runner,
-            Assistant::Codex,
-            Path::new(".")
-        ));
+        assert!(check_assistant(&runner, Assistant::Codex, Path::new(".")).is_err());
     }
 
     #[test]
-    fn install_and_update_run_registry_commands() {
-        let runner = MockRunner::new();
-        install_assistant(&runner, Assistant::Claude, Path::new(".")).unwrap();
-        update_assistant(&runner, Assistant::Claude, Path::new(".")).unwrap();
-        update_assistant(&runner, Assistant::Codex, Path::new(".")).unwrap();
-        assert_eq!(
-            *runner.calls.borrow(),
-            vec![
-                "inherit:npm install -g @anthropic-ai/claude-code".to_string(),
-                "inherit:claude update".to_string(),
-            ]
+    fn runtime_errors_explain_the_missing_dependency() {
+        let runner = MockRunner::new().fail_on("npx --version");
+        let error = check_runtime(&runner, Path::new(".")).unwrap_err();
+        assert!(
+            Localizer::english()
+                .format_error(&error)
+                .contains("npx (npm)")
+        );
+    }
+
+    #[test]
+    fn json_capture_excludes_stderr_warnings() {
+        let output = ShellRunner
+            .run_capture_stdout("echo {} && echo warning 1>&2", Path::new("."))
+            .unwrap();
+        assert_eq!(output.trim(), "{}");
+    }
+
+    #[test]
+    fn failed_json_command_preserves_stdout_diagnostics() {
+        let error = ShellRunner
+            .run_capture_stdout("echo external diagnostic && exit 1", Path::new("."))
+            .unwrap_err();
+        assert!(
+            Localizer::english()
+                .format_error(&error)
+                .contains("external diagnostic")
         );
     }
 }

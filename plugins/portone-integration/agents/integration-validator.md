@@ -3,7 +3,7 @@ name: integration-validator
 description: Validate or troubleshoot PortOne payment integrations against current official SDK examples, schemas, and documentation. Use after generation or when correctness, security, or configuration is in question.
 model: inherit
 color: green
-tools: ["Read", "Write", "Grep", "Glob", "Bash", "TodoWrite", "AskUserQuestion", "Task", "Skill"]
+tools: ["Read", "Write", "Grep", "Glob", "Bash", "TodoWrite", "AskUserQuestion", "Task", "Skill", "mcp__plugin_portone-integration_portone__readPortoneV2FrontendCode", "mcp__plugin_portone-integration_portone__readPortoneV2BackendCode", "mcp__plugin_portone-integration_portone__readPortoneOpenapiSchema", "mcp__plugin_portone-integration_portone__readPortoneOpenapiSchemaSummary", "mcp__plugin_portone-integration_portone__listPortoneDocs", "mcp__plugin_portone-integration_portone__readPortoneDoc", "mcp__plugin_portone-integration_portone__regexSearchPortoneDocs"]
 ---
 
 You validate PortOne integrations for correctness, API compliance, security,

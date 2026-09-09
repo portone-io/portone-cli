@@ -70,13 +70,58 @@ portone setup --assistant codex
 portone setup --assistant both
 ```
 
-The command installs the PortOne marketplace plugin for Claude Code and copies
-the local `plugins/portone-codex` plugin for Codex, updating
-`./.agents/plugins/marketplace.json` as needed. The Claude and Codex plugin
-bundles remain separate.
+Setup uses each assistant's plugin manager to install from the `portone`
+marketplace at `portone-io/portone-cli`. Claude Code receives
+`portone-integration@portone`; Codex receives `portone-codex@portone`. Both are
+installed for your user account and available across projects. Running setup
+again refreshes the marketplace and updates the plugin.
 
-Pass `--allow-dirty` to proceed when the Git working tree has uncommitted
-changes.
+Install your selected assistants, Git, Node.js, and `npx` first. The assistant
+versions must support the plugin commands used by setup; setup checks all
+selected assistants and prerequisites before making changes. It does not
+install or update Claude Code or Codex itself. Noninteractive invocations
+must specify `--assistant`.
+
+Each plugin includes the `portone-cli` skill for CLI authentication, payment
+inspection, and API requests, along with the existing payment integration
+skills or agents. The bundled MCP configuration starts
+`npx -y @portone/mcp-server@latest` when the assistant loads the plugin. Start a
+new assistant session after setup, check the PortOne server with `/mcp`, and
+ask it to retrieve a PortOne document. Console features may request login when
+used; setup itself does not log in or save tokens.
+
+Setup verifies installation and activation before reporting success. If Codex
+reports an inactive plugin, enable it in `/plugins` and rerun setup. If one
+assistant fails, setup exits with code 1 and identifies completed and failed
+targets so you can retry the failed target.
+
+Setup works outside Git repositories and leaves project files unchanged. The
+deprecated `--allow-dirty` flag is accepted as a hidden no-op for compatibility
+with existing scripts.
+
+### Existing marketplace conflicts
+
+If the name `portone` is already registered to another source, setup stops
+without replacing it. Inspect the source with `claude plugin marketplace list
+--json` or `codex plugin marketplace list --json`. Keep the existing registration
+if you need it, or remove that registration through the assistant's plugin
+manager after checking which installed plugins depend on it. Then rerun
+`portone setup --assistant claude` or `portone setup --assistant codex` to register
+`portone-io/portone-cli`.
+
+### Maintaining the bundled CLI skill
+
+In the source repository, edit `skills/portone-cli/` and synchronize its copies
+into both plugin bundles:
+
+```bash
+cargo xtask sync-plugin-skills
+cargo xtask sync-plugin-skills --check
+```
+
+Commit the generated copies with the source changes. CI checks for missing,
+changed, or stale generated files. Publish the plugin and marketplace changes
+to the GitHub default branch before releasing a CLI version that requires them.
 
 ## `portone auth`
 
